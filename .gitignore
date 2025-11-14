@@ -1,0 +1,36 @@
+# Python
+frontend/.venv/
+frontend/venv/
+frontend/__pycache__/
+frontend/**/__pycache__/
+frontend/*.py[cod]
+frontend/*$py.class
+frontend/*.so
+frontend/.Python
+
+# Rust
+backend/target/
+backend/**/*.rs.bk
+backend/Cargo.lock
+
+# Data files
+frontend/data/*.csv
+frontend/data/*.json
+!frontend/data/.gitkeep
+
+# Edge Impulse
+edge-impulse/training-data/*.csv
+edge-impulse/model-weights/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
