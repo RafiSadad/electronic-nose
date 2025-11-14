@@ -1,15 +1,18 @@
 """Serial communication utilities"""
 
-from PySide6.QtCore import QThread, pyqtSignal
+from PySide6.QtCore import QThread, Signal
 import serial
 import json
 
 class SerialWorker(QThread):
     """Worker thread for serial communication"""
     
-    data_received = pyqtSignal(dict)  # Emit received data
-    error_occurred = pyqtSignal(str)  # Emit error message
-    connection_status = pyqtSignal(bool)  # Emit connection status
+    data_received = Signal(dict)
+    error_occurred = Signal(str)
+    connection_status = Signal(bool)
+    
+    # ... rest of code stays the same
+
     
     def __init__(self, port: str, baudrate: int = 115200):
         super().__init__()

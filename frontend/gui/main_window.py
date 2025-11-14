@@ -5,7 +5,10 @@ from PySide6.QtWidgets import (
     QPushButton, QMessageBox, QTabWidget, QTableWidget,
     QTableWidgetItem, QLabel, QStatusBar
 )
-from PySide6.QtCore import Qt, QTimer, QThread, pyqtSignal
+# CHANGE THIS LINE:
+from PySide6.QtCore import Qt, QTimer, QThread, Signal
+# from PySide6.QtCore import Qt, QTimer, QThread, pyqtSignal  # ← DELETE THIS
+
 from PySide6.QtGui import QIcon, QFont
 
 from gui.widgets import ControlPanel, ConnectionPanel, SensorPlot, StatusIndicator
