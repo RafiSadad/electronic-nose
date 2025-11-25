@@ -182,27 +182,30 @@ class ConnectionPanel(QGroupBox):
     def init_ui(self):
         layout = QHBoxLayout()
         
-        # COM Port selection
-        layout.addWidget(QLabel("COM Port:"))
-        self.com_port = QComboBox()
-        self.com_port.addItems(self.get_available_ports())
-        self.com_port.setMaximumWidth(100)
-        layout.addWidget(self.com_port)
+        # GANTI COM Port dengan Server IP
+        layout.addWidget(QLabel("Backend IP:"))
+        self.ip_input = QLineEdit()
+        self.ip_input.setText("127.0.0.1") # Default localhost
+        self.ip_input.setMaximumWidth(120)
+        layout.addWidget(self.ip_input)
         
-        # Baud rate
-        layout.addWidget(QLabel("Baud Rate:"))
-        self.baud_rate = QComboBox()
-        self.baud_rate.addItems(["9600", "115200", "230400"])
-        self.baud_rate.setCurrentText("115200")
-        self.baud_rate.setMaximumWidth(100)
-        layout.addWidget(self.baud_rate)
+        # Port Input (Optional, bisa di hardcode 8082)
+        layout.addWidget(QLabel("Port:"))
+        self.port_input = QLineEdit()
+        self.port_input.setText("8082")
+        self.port_input.setMaximumWidth(60)
+        layout.addWidget(self.port_input)
+        
+        # Hapus Baud Rate (tidak relevan lagi)
         
         # Data source
         layout.addWidget(QLabel("Data Source:"))
         self.data_source = QComboBox()
-        self.data_source.addItems(["Serial (Arduino)", "Simulation"])
+        self.data_source.addItems(["Backend (Rust)", "Simulation"]) # Ubah Label
         self.data_source.setMaximumWidth(150)
         layout.addWidget(self.data_source)
+        
+        # ... sisa code sama (Status Indicator, Button)
         
         # Status indicator
         layout.addWidget(QLabel("Status:"))
@@ -229,8 +232,8 @@ class ConnectionPanel(QGroupBox):
     
     def get_connection_settings(self) -> dict:
         return {
-            'port': self.com_port.currentText(),
-            'baudrate': int(self.baud_rate.currentText()),
+            'host': self.ip_input.text(),
+            'port': int(self.port_input.text()),
             'source': self.data_source.currentText()
         }
     

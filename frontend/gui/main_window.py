@@ -3,19 +3,14 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QTabWidget, QTableWidget,
-    QTableWidgetItem, QLabel, QStatusBar
+    QTableWidgetItem, QLabel
 )
-# CHANGE THIS LINE:
-from PySide6.QtCore import Qt, QTimer, QThread, Signal
-# from PySide6.QtCore import Qt, QTimer, QThread, pyqtSignal  # ← DELETE THIS
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QFont
 
-from PySide6.QtGui import QIcon, QFont
-
-from gui.widgets import ControlPanel, ConnectionPanel, SensorPlot, StatusIndicator
+from gui.widgets import ControlPanel, ConnectionPanel, SensorPlot
 from gui.styles import STYLESHEET, STATUS_COLORS
-from utils.serial_comm import SerialWorker
-from utils.data_processor import DataProcessor
-from utils.file_handler import FileHandler
+from utils.network_comm import NetworkWorker  # Updated import
 from config.constants import (
     APP_NAME, WINDOW_WIDTH, WINDOW_HEIGHT, 
     UPDATE_INTERVAL, SENSOR_NAMES
@@ -37,8 +32,9 @@ class MainWindow(QMainWindow):
         self.is_sampling = False
         self.sampling_data = {i: [] for i in range(4)}
         self.sampling_times = []
-        self.serial_worker = None
-        self.serial_thread = None
+        
+        # Network Worker container
+        self.network_worker = None
         
         # Setup UI
         self.setWindowTitle(APP_NAME)
@@ -139,9 +135,9 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
         self.statusBar().setStyleSheet("background-color: #e8e8e8; color: #333;")
         
-        # Update timer for sampling
+        # Update timer for SIMULATION only
         self.update_timer = QTimer()
-        self.update_timer.timeout.connect(self.on_update_plot)
+        self.update_timer.timeout.connect(self.on_simulation_update)
         
         self.start_time = None
         self.update_interval = UPDATE_INTERVAL
@@ -162,8 +158,6 @@ class MainWindow(QMainWindow):
     
     def populate_stats_table(self):
         """Populate statistics table"""
-        headers = ["Min", "Max", "Mean", "Std Dev"]
-        
         for row in range(4):
             sensor_name = SENSOR_NAMES[row] if row < len(SENSOR_NAMES) else f"Sensor {row+1}"
             self.stats_table.setItem(row, 0, QTableWidgetItem(sensor_name))
@@ -175,19 +169,43 @@ class MainWindow(QMainWindow):
         """Handle connection button click"""
         settings = self.connection_panel.get_connection_settings()
         
+        # Reset previous connection if exists
+        if self.network_worker:
+            self.network_worker.stop()
+            self.network_worker.wait()
+            self.network_worker = None
+
         if settings['source'] == "Simulation":
             self.statusBar().showMessage("Using Simulation mode")
             self.connection_panel.set_status("Simulation Mode", 
                                             STATUS_COLORS['connected'])
             self.control_panel.enable_start(True)
+            self.is_simulation = True
+        
         else:
-            # Try to connect to Arduino
-            self.statusBar().showMessage("Attempting to connect...")
-            # TODO: Implement actual serial connection
-            self.connection_panel.set_status("Connected", 
-                                            STATUS_COLORS['connected'])
+            # Connect to Rust Backend
+            self.is_simulation = False
+            self.statusBar().showMessage(f"Connecting to Backend at {settings['host']}:{settings['port']}...")
+            self.connection_panel.set_status("Connecting...", STATUS_COLORS['sampling'])
+            
+            self.network_worker = NetworkWorker(host=settings['host'], port=settings['port'])
+            self.network_worker.data_received.connect(self.on_data_received)
+            self.network_worker.connection_status.connect(self.on_connection_status)
+            self.network_worker.error_occurred.connect(lambda err: self.statusBar().showMessage(err))
+            
+            self.network_worker.start()
+
+    def on_connection_status(self, connected: bool):
+        """Handle network connection status updates"""
+        if connected:
+            self.connection_panel.set_status("Connected", STATUS_COLORS['connected'])
             self.control_panel.enable_start(True)
-    
+            self.statusBar().showMessage("Connected to Backend System")
+        else:
+            self.connection_panel.set_status("Disconnected", STATUS_COLORS['disconnected'])
+            self.control_panel.enable_start(False)
+            self.statusBar().showMessage("Disconnected from Backend")
+
     def on_start_sampling(self):
         """Start sampling process"""
         sample_info = self.control_panel.get_sample_info()
@@ -213,19 +231,19 @@ class MainWindow(QMainWindow):
         self.control_panel.enable_start(False)
         self.control_panel.enable_stop(True)
         
-        # Start update timer
-        self.update_timer.start(self.update_interval)
+        # Start timer ONLY if simulation. 
+        # If Real hardware, data comes from NetworkWorker signal.
+        if hasattr(self, 'is_simulation') and self.is_simulation:
+            self.update_timer.start(self.update_interval)
         
         self.connection_panel.set_status("Sampling...", 
                                         STATUS_COLORS['sampling'])
         self.statusBar().showMessage("Sampling in progress...")
     
-    def on_update_plot(self):
-        """Update plot with new simulated data"""
+    def on_simulation_update(self):
+        """Update plot with simulated data (Timer based)"""
         if not self.is_sampling:
             return
-        
-        self.start_time += self.update_interval / 1000.0
         
         # Simulate sensor data
         sensor_values = [
@@ -235,9 +253,45 @@ class MainWindow(QMainWindow):
             np.random.normal(280, 32)
         ]
         
+        self.process_new_data(sensor_values)
+
+    def on_data_received(self, data: dict):
+        """Handle data received from Backend (Signal based)"""
+        if not self.is_sampling:
+            return
+            
+        # Parse JSON from Rust Backend
+        # Expected keys: no2, eth, voc, co (based on Backend logic)
+        try:
+            # Map data to sensor indices (0-3)
+            # Adjust mapping based on your sensor order preferences
+            sensor_values = [
+                float(data.get('no2', 0.0)),
+                float(data.get('eth', 0.0)), 
+                float(data.get('voc', 0.0)),
+                float(data.get('co', 0.0))
+            ]
+            
+            # Optional: You can also use 'state' or 'level' from data for UI updates
+            if 'state' in data:
+                self.statusBar().showMessage(f"Sampling... State: {data['state']} | Level: {data.get('level', 0)}")
+                
+            self.process_new_data(sensor_values)
+            
+        except Exception as e:
+            print(f"Error parsing data: {e}")
+
+    def process_new_data(self, sensor_values: list):
+        """Common method to process and plot new data points"""
+        # Time management
+        if not self.sampling_times:
+            self.start_time = 0.0
+        else:
+            self.start_time += self.update_interval / 1000.0
+            
         # Add to data storage
         self.plot_widget.add_data_point(self.start_time, sensor_values)
-        for i, val in enumerate(sensor_values):
+        for i, val in enumerate(sensor_values[:4]): # Ensure max 4 sensors
             self.sampling_data[i].append(val)
         self.sampling_times.append(self.start_time)
         
@@ -252,18 +306,19 @@ class MainWindow(QMainWindow):
         sample_info = self.control_panel.get_sample_info()
         if self.start_time >= sample_info['duration']:
             self.on_stop_sampling()
-    
+
     def on_stop_sampling(self):
         """Stop sampling process"""
         self.is_sampling = False
-        self.update_timer.stop()
+        if self.update_timer.isActive():
+            self.update_timer.stop()
         
         # Enable/disable buttons
         self.control_panel.enable_start(True)
         self.control_panel.enable_stop(False)
         
-        self.connection_panel.set_status("Connected", 
-                                        STATUS_COLORS['connected'])
+        status_text = "Simulation Mode" if hasattr(self, 'is_simulation') and self.is_simulation else "Connected"
+        self.connection_panel.set_status(status_text, STATUS_COLORS['connected'])
         self.statusBar().showMessage(f"Sampling stopped. Collected {len(self.sampling_times)} data points.")
     
     def update_statistics(self):
@@ -362,8 +417,9 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         
-        if self.serial_thread:
-            self.serial_thread.quit()
-            self.serial_thread.wait()
+        # Stop Network Worker cleanly
+        if self.network_worker:
+            self.network_worker.stop()
+            self.network_worker.wait()
         
         event.accept()
