@@ -10,7 +10,7 @@ from PySide6.QtGui import QFont
 
 from gui.widgets import ControlPanel, ConnectionPanel, SensorPlot
 from gui.styles import STYLESHEET, STATUS_COLORS
-from utils.network_comm import NetworkWorker  # Updated import
+from utils.network_comm import NetworkWorker
 from config.constants import (
     APP_NAME, WINDOW_WIDTH, WINDOW_HEIGHT, 
     UPDATE_INTERVAL, SENSOR_NAMES
@@ -21,6 +21,17 @@ import csv
 from datetime import datetime
 from pathlib import Path
 
+# Mapping state dari Arduino (Enum integer) ke String
+# Ini penting agar status di GUI terbaca "PRE-COND" bukan angka "1"
+STATE_NAMES = {
+    0: "IDLE",
+    1: "PRE-COND",
+    2: "RAMP_UP",
+    3: "HOLD",
+    4: "PURGE",
+    5: "RECOVERY",
+    6: "DONE"
+}
 
 class MainWindow(QMainWindow):
     """Main application window"""
@@ -143,25 +154,18 @@ class MainWindow(QMainWindow):
         self.update_interval = UPDATE_INTERVAL
         
     def populate_info_table(self):
-        """Populate information table"""
         info = {
-            "Sample Name": "None",
-            "Sample Type": "None",
-            "Duration": "0 s",
-            "Points Collected": "0",
-            "Elapsed Time": "0 s"
+            "Sample Name": "None", "Sample Type": "None",
+            "Duration": "0 s", "Points Collected": "0", "Elapsed Time": "0 s"
         }
-        
         for row, (key, value) in enumerate(info.items()):
             self.info_table.setItem(row, 0, QTableWidgetItem(key))
             self.info_table.setItem(row, 1, QTableWidgetItem(value))
     
     def populate_stats_table(self):
-        """Populate statistics table"""
         for row in range(4):
             sensor_name = SENSOR_NAMES[row] if row < len(SENSOR_NAMES) else f"Sensor {row+1}"
             self.stats_table.setItem(row, 0, QTableWidgetItem(sensor_name))
-            
             for col in range(1, 5):
                 self.stats_table.setItem(row, col, QTableWidgetItem("0.00"))
     
@@ -169,7 +173,6 @@ class MainWindow(QMainWindow):
         """Handle connection button click"""
         settings = self.connection_panel.get_connection_settings()
         
-        # Reset previous connection if exists
         if self.network_worker:
             self.network_worker.stop()
             self.network_worker.wait()
@@ -177,23 +180,30 @@ class MainWindow(QMainWindow):
 
         if settings['source'] == "Simulation":
             self.statusBar().showMessage("Using Simulation mode")
-            self.connection_panel.set_status("Simulation Mode", 
-                                            STATUS_COLORS['connected'])
+            self.connection_panel.set_status("Simulation Mode", STATUS_COLORS['connected'])
             self.control_panel.enable_start(True)
             self.is_simulation = True
-        
         else:
-            # Connect to Rust Backend
             self.is_simulation = False
             self.statusBar().showMessage(f"Connecting to Backend at {settings['host']}:{settings['port']}...")
             self.connection_panel.set_status("Connecting...", STATUS_COLORS['sampling'])
             
+            # Disable button to prevent double click
+            self.connection_panel.connect_btn.setEnabled(False)
+            self.connection_panel.connect_btn.setText("Connecting...")
+            
             self.network_worker = NetworkWorker(host=settings['host'], port=settings['port'])
             self.network_worker.data_received.connect(self.on_data_received)
             self.network_worker.connection_status.connect(self.on_connection_status)
-            self.network_worker.error_occurred.connect(lambda err: self.statusBar().showMessage(err))
+            self.network_worker.error_occurred.connect(self.handle_network_error)
             
             self.network_worker.start()
+
+    def handle_network_error(self, msg: str):
+        """Handle network errors"""
+        self.statusBar().showMessage(msg)
+        if "Failed to send" in msg or "Cannot send" in msg:
+            QMessageBox.warning(self, "Command Error", msg)
 
     def on_connection_status(self, connected: bool):
         """Handle network connection status updates"""
@@ -201,25 +211,28 @@ class MainWindow(QMainWindow):
             self.connection_panel.set_status("Connected", STATUS_COLORS['connected'])
             self.control_panel.enable_start(True)
             self.statusBar().showMessage("Connected to Backend System")
+            # Lock button when connected
+            self.connection_panel.connect_btn.setText("Connected")
+            self.connection_panel.connect_btn.setEnabled(False)
         else:
             self.connection_panel.set_status("Disconnected", STATUS_COLORS['disconnected'])
             self.control_panel.enable_start(False)
             self.statusBar().showMessage("Disconnected from Backend")
+            # Unlock button when disconnected
+            self.connection_panel.connect_btn.setText("Connect")
+            self.connection_panel.connect_btn.setEnabled(True)
 
     def on_start_sampling(self):
         """Start sampling process"""
         sample_info = self.control_panel.get_sample_info()
-        
         if not sample_info['name']:
             QMessageBox.warning(self, "Warning", "Please enter a sample name!")
             return
         
-        # Update info table
         self.info_table.setItem(0, 1, QTableWidgetItem(sample_info['name']))
         self.info_table.setItem(1, 1, QTableWidgetItem(sample_info['type']))
         self.info_table.setItem(2, 1, QTableWidgetItem(f"{sample_info['duration']} s"))
         
-        # Clear previous data
         self.sampling_data = {i: [] for i in range(4)}
         self.sampling_times = []
         self.plot_widget.clear_data()
@@ -227,82 +240,62 @@ class MainWindow(QMainWindow):
         self.is_sampling = True
         self.start_time = 0
         
-        # Enable/disable buttons
         self.control_panel.enable_start(False)
         self.control_panel.enable_stop(True)
         
-        # Start timer ONLY if simulation. 
-        # If Real hardware, data comes from NetworkWorker signal.
+        # Kirim Command START ke Backend
+        if self.network_worker and not self.is_simulation:
+            self.network_worker.send_command("START_SAMPLING")
+
         if hasattr(self, 'is_simulation') and self.is_simulation:
             self.update_timer.start(self.update_interval)
         
-        self.connection_panel.set_status("Sampling...", 
-                                        STATUS_COLORS['sampling'])
+        self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
         self.statusBar().showMessage("Sampling in progress...")
     
     def on_simulation_update(self):
         """Update plot with simulated data (Timer based)"""
-        if not self.is_sampling:
-            return
-        
-        # Simulate sensor data
+        if not self.is_sampling: return
         sensor_values = [
-            np.random.normal(250, 30),
-            np.random.normal(300, 35),
-            np.random.normal(200, 25),
-            np.random.normal(280, 32)
+            np.random.normal(250, 30), np.random.normal(300, 35),
+            np.random.normal(200, 25), np.random.normal(280, 32)
         ]
-        
         self.process_new_data(sensor_values)
 
     def on_data_received(self, data: dict):
         """Handle data received from Backend (Signal based)"""
-        if not self.is_sampling:
-            return
-            
-        # Parse JSON from Rust Backend
-        # Expected keys: no2, eth, voc, co (based on Backend logic)
+        if not self.is_sampling: return
         try:
-            # Map data to sensor indices (0-3)
-            # Adjust mapping based on your sensor order preferences
             sensor_values = [
-                float(data.get('no2', 0.0)),
-                float(data.get('eth', 0.0)), 
-                float(data.get('voc', 0.0)),
-                float(data.get('co', 0.0))
+                float(data.get('no2', 0.0)), float(data.get('eth', 0.0)), 
+                float(data.get('voc', 0.0)), float(data.get('co', 0.0))
             ]
+            # Parse State Enum to String using STATE_NAMES
+            state_idx = int(data.get('state', 0))
+            state_name = STATE_NAMES.get(state_idx, "UNKNOWN")
+            level = data.get('level', 0)
             
-            # Optional: You can also use 'state' or 'level' from data for UI updates
-            if 'state' in data:
-                self.statusBar().showMessage(f"Sampling... State: {data['state']} | Level: {data.get('level', 0)}")
-                
+            self.statusBar().showMessage(f"Sampling... State: {state_name} | Level: {level}")
             self.process_new_data(sensor_values)
-            
         except Exception as e:
             print(f"Error parsing data: {e}")
 
     def process_new_data(self, sensor_values: list):
         """Common method to process and plot new data points"""
-        # Time management
         if not self.sampling_times:
             self.start_time = 0.0
         else:
             self.start_time += self.update_interval / 1000.0
             
-        # Add to data storage
         self.plot_widget.add_data_point(self.start_time, sensor_values)
-        for i, val in enumerate(sensor_values[:4]): # Ensure max 4 sensors
+        for i, val in enumerate(sensor_values[:4]):
             self.sampling_data[i].append(val)
         self.sampling_times.append(self.start_time)
         
-        # Update info
         self.info_table.setItem(4, 1, QTableWidgetItem(f"{self.start_time:.2f} s"))
         self.info_table.setItem(3, 1, QTableWidgetItem(str(len(self.sampling_times))))
-        
-        # Update stats
         self.update_statistics()
         
-        # Check if sampling duration reached
         sample_info = self.control_panel.get_sample_info()
         if self.start_time >= sample_info['duration']:
             self.on_stop_sampling()
@@ -313,7 +306,10 @@ class MainWindow(QMainWindow):
         if self.update_timer.isActive():
             self.update_timer.stop()
         
-        # Enable/disable buttons
+        # Kirim Command STOP ke Backend
+        if self.network_worker and not self.is_simulation:
+            self.network_worker.send_command("STOP_SAMPLING")
+        
         self.control_panel.enable_start(True)
         self.control_panel.enable_stop(False)
         
@@ -326,15 +322,10 @@ class MainWindow(QMainWindow):
         for sensor_id in range(4):
             if self.sampling_data[sensor_id]:
                 data = np.array(self.sampling_data[sensor_id])
-                
-                self.stats_table.setItem(sensor_id, 1, 
-                    QTableWidgetItem(f"{data.min():.2f}"))
-                self.stats_table.setItem(sensor_id, 2, 
-                    QTableWidgetItem(f"{data.max():.2f}"))
-                self.stats_table.setItem(sensor_id, 3, 
-                    QTableWidgetItem(f"{data.mean():.2f}"))
-                self.stats_table.setItem(sensor_id, 4, 
-                    QTableWidgetItem(f"{data.std():.2f}"))
+                self.stats_table.setItem(sensor_id, 1, QTableWidgetItem(f"{data.min():.2f}"))
+                self.stats_table.setItem(sensor_id, 2, QTableWidgetItem(f"{data.max():.2f}"))
+                self.stats_table.setItem(sensor_id, 3, QTableWidgetItem(f"{data.mean():.2f}"))
+                self.stats_table.setItem(sensor_id, 4, QTableWidgetItem(f"{data.std():.2f}"))
     
     def on_save_data(self):
         """Save sampling data to CSV"""
@@ -344,29 +335,20 @@ class MainWindow(QMainWindow):
         
         sample_info = self.control_panel.get_sample_info()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Create filename
         filename = f"data/{sample_info['name'].replace(' ', '_')}_{timestamp}.csv"
         
         try:
             Path("data").mkdir(exist_ok=True)
-            
             with open(filename, 'w', newline='') as f:
                 writer = csv.writer(f)
-                
-                # Write header with metadata
                 writer.writerow(["Electronic Nose Data Export"])
                 writer.writerow(["Sample Name", sample_info['name']])
                 writer.writerow(["Sample Type", sample_info['type']])
                 writer.writerow(["Export Date", datetime.now().isoformat()])
                 writer.writerow(["Number of Points", len(self.sampling_times)])
                 writer.writerow([])
-                
-                # Write data header
                 headers = ["Time (s)"] + [f"Sensor {i+1}" for i in range(4)]
                 writer.writerow(headers)
-                
-                # Write data
                 for t_idx, t in enumerate(self.sampling_times):
                     row = [f"{t:.3f}"]
                     for s_idx in range(4):
@@ -375,19 +357,13 @@ class MainWindow(QMainWindow):
                         else:
                             row.append("0")
                     writer.writerow(row)
-            
             QMessageBox.information(self, "Success", f"Data saved to {filename}")
             self.statusBar().showMessage(f"Data saved: {filename}")
-            
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save data: {str(e)}")
     
     def on_clear_plot(self):
-        """Clear plot and data"""
-        reply = QMessageBox.question(self, "Confirm", 
-            "Clear all data and plot?", 
-            QMessageBox.Yes | QMessageBox.No)
-        
+        reply = QMessageBox.question(self, "Confirm", "Clear all data and plot?", QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.plot_widget.clear_data()
             self.sampling_data = {i: [] for i in range(4)}
@@ -395,31 +371,20 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Plot cleared")
     
     def on_edge_impulse(self):
-        """Open Edge Impulse in browser"""
         import webbrowser
         webbrowser.open("https://studio.edgeimpulse.com/")
-        QMessageBox.information(self, "Info", 
-            "Edge Impulse opened in your default browser.\n\n" +
-            "Upload your CSV files to train your model.")
+        QMessageBox.information(self, "Info", "Edge Impulse opened in your default browser.\n\nUpload your CSV files to train your model.")
     
     def on_export_csv(self):
-        """Export data as CSV (same as save)"""
         self.on_save_data()
     
     def closeEvent(self, event):
-        """Handle window close event"""
         if self.is_sampling:
-            reply = QMessageBox.question(self, "Confirm", 
-                "Sampling in progress. Exit anyway?", 
-                QMessageBox.Yes | QMessageBox.No)
-            
+            reply = QMessageBox.question(self, "Confirm", "Sampling in progress. Exit anyway?", QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.No:
                 event.ignore()
                 return
-        
-        # Stop Network Worker cleanly
         if self.network_worker:
             self.network_worker.stop()
             self.network_worker.wait()
-        
         event.accept()

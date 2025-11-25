@@ -26,7 +26,8 @@ class NetworkWorker(QThread):
         while self.is_running:
             try:
                 self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.sock.settimeout(5.0)
+                # Set blocking mode agar read loop stabil
+                self.sock.settimeout(None) 
                 self.sock.connect((self.host, self.port))
                 
                 self.connection_status.emit(True)
@@ -42,31 +43,39 @@ class NetworkWorker(QThread):
                         
                     try:
                         data = json.loads(line.strip())
-                        # Mapping data backend ke format GUI jika perlu
-                        # Backend mengirim field snake_case, pastikan GUI handle itu
                         self.data_received.emit(data)
                     except json.JSONDecodeError:
                         pass
                         
             except (socket.error, ConnectionRefusedError) as e:
                 self.connection_status.emit(False)
-                self.error_occurred.emit(f"Connection failed: {str(e)}. Retrying in 3s...")
-                time.sleep(3) # Retry delay
+                # Retry delay
+                time.sleep(3) 
             finally:
-                if self.sock:
-                    self.sock.close()
-                    
+                self.cleanup()
+    
+    def cleanup(self):
+        if self.sock:
+            try:
+                self.sock.close()
+            except:
+                pass
+            self.sock = None
+
     def stop(self):
         """Stop the worker"""
         self.is_running = False
+        self.cleanup()
+
+    def send_command(self, command: str):
+        """Send command to Backend -> Arduino"""
         if self.sock:
             try:
-                self.sock.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            self.sock.close()
-
-    # Perintah kirim balik ke backend (jika perlu kontrol Arduino via Backend)
-    def send_command(self, command: str):
-        # Implementasi kirim command ke Rust (jika Rust support 2-way comm)
-        pass
+                # Kirim string command dengan newline
+                msg = f"{command}\n"
+                self.sock.sendall(msg.encode('utf-8'))
+                print(f"Sent command: {command}")
+            except Exception as e:
+                self.error_occurred.emit(f"Failed to send command: {str(e)}")
+        else:
+            self.error_occurred.emit("Cannot send command: Not connected to Backend!")
