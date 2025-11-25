@@ -11,7 +11,7 @@ class SerialWorker(QThread):
     error_occurred = Signal(str)
     connection_status = Signal(bool)
     
-    # ... rest of code stays the same
+   
 
     
     def __init__(self, port: str, baudrate: int = 115200):
