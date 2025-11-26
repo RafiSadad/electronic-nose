@@ -13,6 +13,8 @@ services:
       - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
       - DOCKER_INFLUXDB_INIT_ORG=its_instrumentasi
       - DOCKER_INFLUXDB_INIT_BUCKET=electronic_nose
+      # TAMBAHKAN BARIS INI:
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=electronic_nose_token 
     restart: always
 
 volumes:

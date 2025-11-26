@@ -22,7 +22,7 @@ import csv
 from datetime import datetime
 from pathlib import Path
 
-# Mapping state dari Arduino
+# Mapping state dari Arduino (Sesuai Kode Pak Zizu)
 STATE_NAMES = {
     0: "IDLE",
     1: "PRE-COND",
@@ -41,7 +41,6 @@ class MainWindow(QMainWindow):
         
         # Initialize variables
         self.is_sampling = False
-        # Gunakan NUM_SENSORS agar dinamis
         self.sampling_data = {i: [] for i in range(NUM_SENSORS)}
         self.sampling_times = []
         
@@ -154,7 +153,7 @@ class MainWindow(QMainWindow):
     def populate_info_table(self):
         info = {
             "Sample Name": "None", "Sample Type": "None",
-            "Duration": "0 s", "Points Collected": "0", "Elapsed Time": "0 s"
+            "Duration": "Auto (FSM)", "Points Collected": "0", "Elapsed Time": "0 s"
         }
         for row, (key, value) in enumerate(info.items()):
             self.info_table.setItem(row, 0, QTableWidgetItem(key))
@@ -229,7 +228,7 @@ class MainWindow(QMainWindow):
         
         self.info_table.setItem(0, 1, QTableWidgetItem(sample_info['name']))
         self.info_table.setItem(1, 1, QTableWidgetItem(sample_info['type']))
-        self.info_table.setItem(2, 1, QTableWidgetItem(f"{sample_info['duration']} s"))
+        self.info_table.setItem(2, 1, QTableWidgetItem("Auto (Wait for DONE)"))
         
         self.sampling_data = {i: [] for i in range(NUM_SENSORS)}
         self.sampling_times = []
@@ -254,25 +253,35 @@ class MainWindow(QMainWindow):
     
     def on_data_received(self, data: dict):
         """Handle data received from Backend (Signal based)"""
-        if not self.is_sampling: return
+        # Meskipun tidak sedang sampling, kita tetap bisa memonitor status
+        # tapi data hanya disimpan jika self.is_sampling = True
+        
         try:
-            # === DIPERBAIKI: MENGAMBIL 7 DATA ===
             sensor_values = [
                 float(data.get('no2', 0.0)),
                 float(data.get('eth', 0.0)), 
                 float(data.get('voc', 0.0)),
                 float(data.get('co', 0.0)),
-                float(data.get('co_mics', 0.0)),  # Tambahan 1
-                float(data.get('eth_mics', 0.0)), # Tambahan 2
-                float(data.get('voc_mics', 0.0))  # Tambahan 3
+                float(data.get('co_mics', 0.0)),
+                float(data.get('eth_mics', 0.0)),
+                float(data.get('voc_mics', 0.0))
             ]
             
             state_idx = int(data.get('state', 0))
             state_name = STATE_NAMES.get(state_idx, "UNKNOWN")
             level = data.get('level', 0)
             
-            self.statusBar().showMessage(f"Sampling... State: {state_name} | Level: {level}")
-            self.process_new_data(sensor_values)
+            # Update status bar dengan fase Zizu
+            self.statusBar().showMessage(f"System State: {state_name} | Level: {level}")
+            
+            if self.is_sampling:
+                self.process_new_data(sensor_values)
+                
+                # --- LOGIKA BARU: Stop Otomatis jika DONE (State 6) ---
+                if state_idx == 6: # DONE
+                    self.on_stop_sampling()
+                    QMessageBox.information(self, "Finished", "Sampling sequence completed (All Levels Done)!")
+                    
         except Exception as e:
             print(f"Error parsing data: {e}")
 
@@ -284,7 +293,7 @@ class MainWindow(QMainWindow):
             
         self.plot_widget.add_data_point(self.start_time, sensor_values)
         
-        # Simpan data sesuai jumlah sensor
+        # Simpan data
         for i, val in enumerate(sensor_values[:NUM_SENSORS]):
             self.sampling_data[i].append(val)
         self.sampling_times.append(self.start_time)
@@ -293,9 +302,8 @@ class MainWindow(QMainWindow):
         self.info_table.setItem(3, 1, QTableWidgetItem(str(len(self.sampling_times))))
         self.update_statistics()
         
-        sample_info = self.control_panel.get_sample_info()
-        if self.start_time >= sample_info['duration']:
-            self.on_stop_sampling()
+        # --- PERUBAHAN: TIDAK ADA LAGI STOP BERDASARKAN WAKTU ---
+        # Stop hanya dipicu oleh state_idx == 6 di on_data_received
 
     def on_stop_sampling(self):
         self.is_sampling = False
@@ -337,6 +345,7 @@ class MainWindow(QMainWindow):
                 writer.writerow(["Sample Name", sample_info['name']])
                 writer.writerow(["Sample Type", sample_info['type']])
                 writer.writerow(["Export Date", datetime.now().isoformat()])
+                writer.writerow(["Mode", "Auto FSM (Zizu)"])
                 writer.writerow(["Number of Points", len(self.sampling_times)])
                 writer.writerow([])
                 headers = ["Time (s)"] + [SENSOR_NAMES[i] for i in range(NUM_SENSORS)]

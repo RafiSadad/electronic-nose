@@ -11,7 +11,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QBrush
 import pyqtgraph as pg
 import numpy as np
 import serial.tools.list_ports
-from config.constants import SAMPLE_TYPES, PLOT_COLORS, NUM_SENSORS, SENSOR_NAMES # Import lengkap
+from config.constants import SAMPLE_TYPES, PLOT_COLORS, NUM_SENSORS, SENSOR_NAMES
 
 class StatusIndicator(QFrame):
     """Custom status indicator widget (Cute Dot)"""
@@ -53,7 +53,7 @@ class SensorPlot(pg.PlotWidget):
         super().__init__(parent)
         
         self.plot_title = title
-        self.num_sensors = NUM_SENSORS # Menggunakan konstanta dinamis (7)
+        self.num_sensors = NUM_SENSORS
         self.max_points = 500
         
         # Setup plot style
@@ -71,12 +71,12 @@ class SensorPlot(pg.PlotWidget):
         self.sensor_data = {i: np.array([]) for i in range(self.num_sensors)}
         self.plot_lines = {}
         
-        self.addLegend() # Menambahkan legenda agar nama sensor terlihat
+        self.addLegend()
         
         # Create plot lines using Constants Colors
         for i in range(self.num_sensors):
             color = PLOT_COLORS[i % len(PLOT_COLORS)]
-            pen = pg.mkPen(color=color, width=3) # Lebih tebal dikit biar cute
+            pen = pg.mkPen(color=color, width=3)
             
             # Ambil nama sensor dari constants jika ada
             name = SENSOR_NAMES[i] if i < len(SENSOR_NAMES) else f"Sensor {i+1}"
@@ -86,7 +86,7 @@ class SensorPlot(pg.PlotWidget):
     def add_data_point(self, time: float, sensor_values: list):
         self.time_data = np.append(self.time_data, time)
         
-        # Update data per sensor (dibatasi oleh num_sensors)
+        # Update data per sensor
         for i, value in enumerate(sensor_values[:self.num_sensors]):
             self.sensor_data[i] = np.append(self.sensor_data[i], value)
         
@@ -132,18 +132,15 @@ class ControlPanel(QGroupBox):
         # Sample type dropdown (BUNGA EDITION)
         layout.addWidget(QLabel("Flower Type:"))
         self.sample_type = QComboBox()
-        self.sample_type.addItems(SAMPLE_TYPES) # Load dari constants
+        self.sample_type.addItems(SAMPLE_TYPES)
         self.sample_type.setMinimumWidth(160)
         layout.addWidget(self.sample_type)
         
-        # Duration input
-        layout.addWidget(QLabel("Duration (s):"))
-        self.duration_input = QSpinBox()
-        self.duration_input.setValue(30)
-        self.duration_input.setMinimum(1)
-        self.duration_input.setMaximum(600)
-        self.duration_input.setFixedWidth(70)
-        layout.addWidget(self.duration_input)
+        # --- PERUBAHAN: Menghapus Input Duration ---
+        # Label Info Mode Otomatis
+        mode_label = QLabel("Mode: <b>Auto FSM (Zizu)</b>")
+        mode_label.setStyleSheet("color: #FF69B4; background: #FFF0F5; padding: 5px; border-radius: 5px;")
+        layout.addWidget(mode_label)
         
         # Buttons
         self.start_btn = QPushButton("▶ Start")
@@ -177,7 +174,7 @@ class ControlPanel(QGroupBox):
         return {
             'name': self.sample_input.text() or "Unnamed Sample",
             'type': self.sample_type.currentText(),
-            'duration': self.duration_input.value()
+            'mode': "Auto (FSM)" # Mengganti duration dengan info mode
         }
 
 
