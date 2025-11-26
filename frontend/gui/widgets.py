@@ -11,7 +11,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QBrush
 import pyqtgraph as pg
 import numpy as np
 import serial.tools.list_ports
-from config.constants import SAMPLE_TYPES, PLOT_COLORS # Import ini penting
+from config.constants import SAMPLE_TYPES, PLOT_COLORS, NUM_SENSORS, SENSOR_NAMES # Import lengkap
 
 class StatusIndicator(QFrame):
     """Custom status indicator widget (Cute Dot)"""
@@ -53,7 +53,7 @@ class SensorPlot(pg.PlotWidget):
         super().__init__(parent)
         
         self.plot_title = title
-        self.num_sensors = 4
+        self.num_sensors = NUM_SENSORS # Menggunakan konstanta dinamis (7)
         self.max_points = 500
         
         # Setup plot style
@@ -71,22 +71,32 @@ class SensorPlot(pg.PlotWidget):
         self.sensor_data = {i: np.array([]) for i in range(self.num_sensors)}
         self.plot_lines = {}
         
+        self.addLegend() # Menambahkan legenda agar nama sensor terlihat
+        
         # Create plot lines using Constants Colors
         for i in range(self.num_sensors):
             color = PLOT_COLORS[i % len(PLOT_COLORS)]
             pen = pg.mkPen(color=color, width=3) # Lebih tebal dikit biar cute
-            self.plot_lines[i] = self.plot([], [], pen=pen, name=f"Sensor {i+1}")
+            
+            # Ambil nama sensor dari constants jika ada
+            name = SENSOR_NAMES[i] if i < len(SENSOR_NAMES) else f"Sensor {i+1}"
+            
+            self.plot_lines[i] = self.plot([], [], pen=pen, name=name)
     
     def add_data_point(self, time: float, sensor_values: list):
         self.time_data = np.append(self.time_data, time)
+        
+        # Update data per sensor (dibatasi oleh num_sensors)
         for i, value in enumerate(sensor_values[:self.num_sensors]):
             self.sensor_data[i] = np.append(self.sensor_data[i], value)
         
+        # Scroll logic (keep max points)
         if len(self.time_data) > self.max_points:
             self.time_data = self.time_data[-self.max_points:]
             for i in range(self.num_sensors):
                 self.sensor_data[i] = self.sensor_data[i][-self.max_points:]
         
+        # Update grafik lines
         for i in range(self.num_sensors):
             self.plot_lines[i].setData(self.time_data, self.sensor_data[i])
     

@@ -1,6 +1,6 @@
 """Main application window"""
 
-import serial  # Wajib ada untuk komunikasi USB
+import serial
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QTabWidget, QTableWidget,
@@ -14,7 +14,7 @@ from gui.styles import STYLESHEET, STATUS_COLORS
 from utils.network_comm import NetworkWorker
 from config.constants import (
     APP_NAME, WINDOW_WIDTH, WINDOW_HEIGHT, 
-    UPDATE_INTERVAL, SENSOR_NAMES
+    UPDATE_INTERVAL, SENSOR_NAMES, NUM_SENSORS
 )
 
 import numpy as np
@@ -41,12 +41,13 @@ class MainWindow(QMainWindow):
         
         # Initialize variables
         self.is_sampling = False
-        self.sampling_data = {i: [] for i in range(4)}
+        # Gunakan NUM_SENSORS agar dinamis
+        self.sampling_data = {i: [] for i in range(NUM_SENSORS)}
         self.sampling_times = []
         
         # Workers
         self.network_worker = None
-        self.serial_connection = None # Untuk kontrol motor
+        self.serial_connection = None 
         
         # Setup UI
         self.setWindowTitle(APP_NAME)
@@ -110,7 +111,8 @@ class MainWindow(QMainWindow):
         stats_label.setFont(info_label_font)
         tab3_layout.addWidget(stats_label)
         
-        self.stats_table = QTableWidget(5, 5)
+        # Setup tabel statistik sesuai jumlah sensor
+        self.stats_table = QTableWidget(NUM_SENSORS + 1, 5) # +1 buffer
         self.stats_table.setHorizontalHeaderLabels([
             "Sensor", "Min", "Max", "Mean", "Std Dev"
         ])
@@ -159,7 +161,7 @@ class MainWindow(QMainWindow):
             self.info_table.setItem(row, 1, QTableWidgetItem(value))
     
     def populate_stats_table(self):
-        for row in range(4):
+        for row in range(NUM_SENSORS):
             sensor_name = SENSOR_NAMES[row] if row < len(SENSOR_NAMES) else f"Sensor {row+1}"
             self.stats_table.setItem(row, 0, QTableWidgetItem(sensor_name))
             for col in range(1, 5):
@@ -169,7 +171,6 @@ class MainWindow(QMainWindow):
         """Handle connection button click (HYBRID MODE)"""
         settings = self.connection_panel.get_connection_settings()
         
-        # 1. SETUP NETWORK (Untuk Data)
         if self.network_worker:
             self.network_worker.stop()
             self.network_worker.wait()
@@ -178,7 +179,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Connecting Data to {settings['host']} and Control to {settings['serial_port']}...")
         self.connection_panel.set_status("Connecting...", STATUS_COLORS['sampling'])
         
-        # Disable button
         self.connection_panel.connect_btn.setEnabled(False)
         self.connection_panel.connect_btn.setText("Connecting...")
         
@@ -188,7 +188,6 @@ class MainWindow(QMainWindow):
         self.network_worker.error_occurred.connect(self.handle_network_error)
         self.network_worker.start()
 
-        # 2. SETUP SERIAL (Untuk Control Motor)
         if self.serial_connection and self.serial_connection.is_open:
             self.serial_connection.close()
             
@@ -206,14 +205,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "No Serial Port selected. Motor control will not work!")
 
     def handle_network_error(self, msg: str):
-        """Handle network errors"""
         self.statusBar().showMessage(msg)
-        if "Failed to send" in msg or "Cannot send" in msg:
-            # Jika network error kirim cmd, kita abaikan karena pakai Serial sekarang
-            pass 
 
     def on_connection_status(self, connected: bool):
-        """Handle network connection status updates"""
         if connected:
             self.connection_panel.set_status("Hybrid Connected", STATUS_COLORS['connected'])
             self.control_panel.enable_start(True)
@@ -228,7 +222,6 @@ class MainWindow(QMainWindow):
             self.connection_panel.connect_btn.setEnabled(True)
 
     def on_start_sampling(self):
-        """Start sampling process"""
         sample_info = self.control_panel.get_sample_info()
         if not sample_info['name']:
             QMessageBox.warning(self, "Warning", "Please enter a sample name!")
@@ -238,7 +231,7 @@ class MainWindow(QMainWindow):
         self.info_table.setItem(1, 1, QTableWidgetItem(sample_info['type']))
         self.info_table.setItem(2, 1, QTableWidgetItem(f"{sample_info['duration']} s"))
         
-        self.sampling_data = {i: [] for i in range(4)}
+        self.sampling_data = {i: [] for i in range(NUM_SENSORS)}
         self.sampling_times = []
         self.plot_widget.clear_data()
         
@@ -248,7 +241,6 @@ class MainWindow(QMainWindow):
         self.control_panel.enable_start(False)
         self.control_panel.enable_stop(True)
         
-        # --- KIRIM CMD VIA SERIAL ---
         if self.serial_connection and self.serial_connection.is_open:
             try:
                 self.serial_connection.write(b"START_SAMPLING\n")
@@ -264,10 +256,17 @@ class MainWindow(QMainWindow):
         """Handle data received from Backend (Signal based)"""
         if not self.is_sampling: return
         try:
+            # === DIPERBAIKI: MENGAMBIL 7 DATA ===
             sensor_values = [
-                float(data.get('no2', 0.0)), float(data.get('eth', 0.0)), 
-                float(data.get('voc', 0.0)), float(data.get('co', 0.0))
+                float(data.get('no2', 0.0)),
+                float(data.get('eth', 0.0)), 
+                float(data.get('voc', 0.0)),
+                float(data.get('co', 0.0)),
+                float(data.get('co_mics', 0.0)),  # Tambahan 1
+                float(data.get('eth_mics', 0.0)), # Tambahan 2
+                float(data.get('voc_mics', 0.0))  # Tambahan 3
             ]
+            
             state_idx = int(data.get('state', 0))
             state_name = STATE_NAMES.get(state_idx, "UNKNOWN")
             level = data.get('level', 0)
@@ -278,14 +277,15 @@ class MainWindow(QMainWindow):
             print(f"Error parsing data: {e}")
 
     def process_new_data(self, sensor_values: list):
-        """Common method to process and plot new data points"""
         if not self.sampling_times:
             self.start_time = 0.0
         else:
             self.start_time += self.update_interval / 1000.0
             
         self.plot_widget.add_data_point(self.start_time, sensor_values)
-        for i, val in enumerate(sensor_values[:4]):
+        
+        # Simpan data sesuai jumlah sensor
+        for i, val in enumerate(sensor_values[:NUM_SENSORS]):
             self.sampling_data[i].append(val)
         self.sampling_times.append(self.start_time)
         
@@ -298,10 +298,7 @@ class MainWindow(QMainWindow):
             self.on_stop_sampling()
 
     def on_stop_sampling(self):
-        """Stop sampling process"""
         self.is_sampling = False
-        
-        # --- KIRIM CMD VIA SERIAL ---
         if self.serial_connection and self.serial_connection.is_open:
             try:
                 self.serial_connection.write(b"STOP_SAMPLING\n")
@@ -315,7 +312,7 @@ class MainWindow(QMainWindow):
     
     def update_statistics(self):
         """Update statistics table"""
-        for sensor_id in range(4):
+        for sensor_id in range(NUM_SENSORS):
             if self.sampling_data[sensor_id]:
                 data = np.array(self.sampling_data[sensor_id])
                 self.stats_table.setItem(sensor_id, 1, QTableWidgetItem(f"{data.min():.2f}"))
@@ -324,7 +321,6 @@ class MainWindow(QMainWindow):
                 self.stats_table.setItem(sensor_id, 4, QTableWidgetItem(f"{data.std():.2f}"))
     
     def on_save_data(self):
-        """Save sampling data to CSV"""
         if not self.sampling_times:
             QMessageBox.warning(self, "Warning", "No data to save!")
             return
@@ -343,18 +339,17 @@ class MainWindow(QMainWindow):
                 writer.writerow(["Export Date", datetime.now().isoformat()])
                 writer.writerow(["Number of Points", len(self.sampling_times)])
                 writer.writerow([])
-                headers = ["Time (s)"] + [f"Sensor {i+1}" for i in range(4)]
+                headers = ["Time (s)"] + [SENSOR_NAMES[i] for i in range(NUM_SENSORS)]
                 writer.writerow(headers)
                 for t_idx, t in enumerate(self.sampling_times):
                     row = [f"{t:.3f}"]
-                    for s_idx in range(4):
+                    for s_idx in range(NUM_SENSORS):
                         if t_idx < len(self.sampling_data[s_idx]):
                             row.append(f"{self.sampling_data[s_idx][t_idx]:.2f}")
                         else:
                             row.append("0")
                     writer.writerow(row)
             QMessageBox.information(self, "Success", f"Data saved to {filename}")
-            self.statusBar().showMessage(f"Data saved: {filename}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save data: {str(e)}")
     
@@ -362,14 +357,14 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(self, "Confirm", "Clear all data and plot?", QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.plot_widget.clear_data()
-            self.sampling_data = {i: [] for i in range(4)}
+            self.sampling_data = {i: [] for i in range(NUM_SENSORS)}
             self.sampling_times = []
             self.statusBar().showMessage("Plot cleared")
     
     def on_edge_impulse(self):
         import webbrowser
         webbrowser.open("https://studio.edgeimpulse.com/")
-        QMessageBox.information(self, "Info", "Edge Impulse opened in your default browser.\n\nUpload your CSV files to train your model.")
+        QMessageBox.information(self, "Info", "Edge Impulse opened in your default browser.")
     
     def on_export_csv(self):
         self.on_save_data()
@@ -383,7 +378,6 @@ class MainWindow(QMainWindow):
         if self.network_worker:
             self.network_worker.stop()
             self.network_worker.wait()
-        # Close Serial
         if self.serial_connection:
             self.serial_connection.close()
         event.accept()
