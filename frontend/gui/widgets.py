@@ -11,7 +11,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QBrush
 import pyqtgraph as pg
 import numpy as np
 import serial.tools.list_ports
-from config.constants import SAMPLE_TYPES, PLOT_COLORS, NUM_SENSORS, SENSOR_NAMES
+from config.constants import SAMPLE_TYPES, PLOT_COLORS, NUM_SENSORS, SENSOR_NAMES, MAX_PLOT_POINTS
 
 class StatusIndicator(QFrame):
     """Custom status indicator widget (Cute Dot)"""
@@ -54,7 +54,9 @@ class SensorPlot(pg.PlotWidget):
         
         self.plot_title = title
         self.num_sensors = NUM_SENSORS
-        self.max_points = 500
+        
+        # UPDATE: Set ke angka besar (20.000) untuk menampung >30 menit data
+        self.max_points = MAX_PLOT_POINTS 
         
         # Setup plot style
         self.setTitle(self.plot_title, color='#555555', size='12pt')
@@ -90,11 +92,11 @@ class SensorPlot(pg.PlotWidget):
         for i, value in enumerate(sensor_values[:self.num_sensors]):
             self.sensor_data[i] = np.append(self.sensor_data[i], value)
         
-        # Scroll logic (keep max points)
-        if len(self.time_data) > self.max_points:
-            self.time_data = self.time_data[-self.max_points:]
-            for i in range(self.num_sensors):
-                self.sensor_data[i] = self.sensor_data[i][-self.max_points:]
+        # UPDATE: Matikan logika scrolling agar data lama TIDAK hilang
+        # if len(self.time_data) > self.max_points:
+        #     self.time_data = self.time_data[-self.max_points:]
+        #     for i in range(self.num_sensors):
+        #         self.sensor_data[i] = self.sensor_data[i][-self.max_points:]
         
         # Update grafik lines
         for i in range(self.num_sensors):
@@ -136,7 +138,6 @@ class ControlPanel(QGroupBox):
         self.sample_type.setMinimumWidth(160)
         layout.addWidget(self.sample_type)
         
-        # --- PERUBAHAN: Menghapus Input Duration ---
         # Label Info Mode Otomatis
         mode_label = QLabel("Mode: <b>Auto FSM (Zizu)</b>")
         mode_label.setStyleSheet("color: #FF69B4; background: #FFF0F5; padding: 5px; border-radius: 5px;")
@@ -174,7 +175,7 @@ class ControlPanel(QGroupBox):
         return {
             'name': self.sample_input.text() or "Unnamed Sample",
             'type': self.sample_type.currentText(),
-            'mode': "Auto (FSM)" # Mengganti duration dengan info mode
+            'mode': "Auto (FSM)" 
         }
 
 

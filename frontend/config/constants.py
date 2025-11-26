@@ -2,7 +2,7 @@
 
 # Application Info
 APP_NAME = "Electronic Nose Visualizer | Kelompok 6 SPS (Multichannel + MiCS)"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0" # Updated version
 WINDOW_WIDTH = 1400
 WINDOW_HEIGHT = 900
 
@@ -12,9 +12,14 @@ SERIAL_TIMEOUT = 1
 SERIAL_BUFFER_SIZE = 1024
 
 # Data Collection
-MAX_PLOT_POINTS = 500
-UPDATE_INTERVAL = 100  # milliseconds
-NUM_SENSORS = 7  # <--- DIPERBAIKI DARI 4 KE 7
+# UPDATE: Dinaikkan ke 20.000 untuk support durasi >30 menit tanpa hilang
+MAX_PLOT_POINTS = 20000 
+
+# UPDATE: Diubah ke 250ms agar sinkron dengan Arduino (4Hz)
+# Ini penting agar sumbu waktu di grafik akurat (Real-Time)
+UPDATE_INTERVAL = 250  
+
+NUM_SENSORS = 7
 
 # Sensor Names (Sesuai main.ino)
 SENSOR_NAMES = [
@@ -27,7 +32,7 @@ SENSOR_NAMES = [
     "MiCS-VOC (Approximation)"
 ]
 
-# Cute Pastel Colors for plotting 🌸 (Ditambah agar cukup untuk 7 sensor)
+# Cute Pastel Colors for plotting 🌸
 PLOT_COLORS = [
     '#FF9AA2',  # Pastel Red
     '#B5EAD7',  # Pastel Mint
