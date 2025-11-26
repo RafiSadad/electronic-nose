@@ -1,5 +1,6 @@
 """Main application window"""
 
+import serial  # Wajib ada untuk komunikasi USB
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QTabWidget, QTableWidget,
@@ -21,8 +22,7 @@ import csv
 from datetime import datetime
 from pathlib import Path
 
-# Mapping state dari Arduino (Enum integer) ke String
-# Ini penting agar status di GUI terbaca "PRE-COND" bukan angka "1"
+# Mapping state dari Arduino
 STATE_NAMES = {
     0: "IDLE",
     1: "PRE-COND",
@@ -44,8 +44,9 @@ class MainWindow(QMainWindow):
         self.sampling_data = {i: [] for i in range(4)}
         self.sampling_times = []
         
-        # Network Worker container
+        # Workers
         self.network_worker = None
+        self.serial_connection = None # Untuk kontrol motor
         
         # Setup UI
         self.setWindowTitle(APP_NAME)
@@ -146,11 +147,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
         self.statusBar().setStyleSheet("background-color: #e8e8e8; color: #333;")
         
-        # Update timer for SIMULATION only
-        self.update_timer = QTimer()
-        self.update_timer.timeout.connect(self.on_simulation_update)
-        
-        self.start_time = None
         self.update_interval = UPDATE_INTERVAL
         
     def populate_info_table(self):
@@ -170,56 +166,65 @@ class MainWindow(QMainWindow):
                 self.stats_table.setItem(row, col, QTableWidgetItem("0.00"))
     
     def on_connect(self):
-        """Handle connection button click"""
+        """Handle connection button click (HYBRID MODE)"""
         settings = self.connection_panel.get_connection_settings()
         
+        # 1. SETUP NETWORK (Untuk Data)
         if self.network_worker:
             self.network_worker.stop()
             self.network_worker.wait()
             self.network_worker = None
 
-        if settings['source'] == "Simulation":
-            self.statusBar().showMessage("Using Simulation mode")
-            self.connection_panel.set_status("Simulation Mode", STATUS_COLORS['connected'])
-            self.control_panel.enable_start(True)
-            self.is_simulation = True
+        self.statusBar().showMessage(f"Connecting Data to {settings['host']} and Control to {settings['serial_port']}...")
+        self.connection_panel.set_status("Connecting...", STATUS_COLORS['sampling'])
+        
+        # Disable button
+        self.connection_panel.connect_btn.setEnabled(False)
+        self.connection_panel.connect_btn.setText("Connecting...")
+        
+        self.network_worker = NetworkWorker(host=settings['host'], port=settings['port'])
+        self.network_worker.data_received.connect(self.on_data_received)
+        self.network_worker.connection_status.connect(self.on_connection_status)
+        self.network_worker.error_occurred.connect(self.handle_network_error)
+        self.network_worker.start()
+
+        # 2. SETUP SERIAL (Untuk Control Motor)
+        if self.serial_connection and self.serial_connection.is_open:
+            self.serial_connection.close()
+            
+        if settings['serial_port'] != "No Ports":
+            try:
+                self.serial_connection = serial.Serial(
+                    settings['serial_port'], 
+                    settings['baud_rate'], 
+                    timeout=1
+                )
+                print(f"✅ Serial Connected: {settings['serial_port']}")
+            except Exception as e:
+                QMessageBox.warning(self, "Serial Error", f"Failed to connect to Serial Port: {e}")
         else:
-            self.is_simulation = False
-            self.statusBar().showMessage(f"Connecting to Backend at {settings['host']}:{settings['port']}...")
-            self.connection_panel.set_status("Connecting...", STATUS_COLORS['sampling'])
-            
-            # Disable button to prevent double click
-            self.connection_panel.connect_btn.setEnabled(False)
-            self.connection_panel.connect_btn.setText("Connecting...")
-            
-            self.network_worker = NetworkWorker(host=settings['host'], port=settings['port'])
-            self.network_worker.data_received.connect(self.on_data_received)
-            self.network_worker.connection_status.connect(self.on_connection_status)
-            self.network_worker.error_occurred.connect(self.handle_network_error)
-            
-            self.network_worker.start()
+            QMessageBox.warning(self, "Warning", "No Serial Port selected. Motor control will not work!")
 
     def handle_network_error(self, msg: str):
         """Handle network errors"""
         self.statusBar().showMessage(msg)
         if "Failed to send" in msg or "Cannot send" in msg:
-            QMessageBox.warning(self, "Command Error", msg)
+            # Jika network error kirim cmd, kita abaikan karena pakai Serial sekarang
+            pass 
 
     def on_connection_status(self, connected: bool):
         """Handle network connection status updates"""
         if connected:
-            self.connection_panel.set_status("Connected", STATUS_COLORS['connected'])
+            self.connection_panel.set_status("Hybrid Connected", STATUS_COLORS['connected'])
             self.control_panel.enable_start(True)
-            self.statusBar().showMessage("Connected to Backend System")
-            # Lock button when connected
+            self.statusBar().showMessage("Connected: Data (WiFi) + Control (Ready)")
             self.connection_panel.connect_btn.setText("Connected")
             self.connection_panel.connect_btn.setEnabled(False)
         else:
             self.connection_panel.set_status("Disconnected", STATUS_COLORS['disconnected'])
             self.control_panel.enable_start(False)
             self.statusBar().showMessage("Disconnected from Backend")
-            # Unlock button when disconnected
-            self.connection_panel.connect_btn.setText("Connect")
+            self.connection_panel.connect_btn.setText("Connect All")
             self.connection_panel.connect_btn.setEnabled(True)
 
     def on_start_sampling(self):
@@ -243,25 +248,18 @@ class MainWindow(QMainWindow):
         self.control_panel.enable_start(False)
         self.control_panel.enable_stop(True)
         
-        # Kirim Command START ke Backend
-        if self.network_worker and not self.is_simulation:
-            self.network_worker.send_command("START_SAMPLING")
-
-        if hasattr(self, 'is_simulation') and self.is_simulation:
-            self.update_timer.start(self.update_interval)
-        
+        # --- KIRIM CMD VIA SERIAL ---
+        if self.serial_connection and self.serial_connection.is_open:
+            try:
+                self.serial_connection.write(b"START_SAMPLING\n")
+                self.statusBar().showMessage("Sampling Started (Command sent via Serial)")
+            except Exception as e:
+                QMessageBox.critical(self, "Serial Error", f"Failed to send start command: {e}")
+        else:
+            self.statusBar().showMessage("Sampling Started (WARNING: Serial not connected!)")
+            
         self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
-        self.statusBar().showMessage("Sampling in progress...")
     
-    def on_simulation_update(self):
-        """Update plot with simulated data (Timer based)"""
-        if not self.is_sampling: return
-        sensor_values = [
-            np.random.normal(250, 30), np.random.normal(300, 35),
-            np.random.normal(200, 25), np.random.normal(280, 32)
-        ]
-        self.process_new_data(sensor_values)
-
     def on_data_received(self, data: dict):
         """Handle data received from Backend (Signal based)"""
         if not self.is_sampling: return
@@ -270,7 +268,6 @@ class MainWindow(QMainWindow):
                 float(data.get('no2', 0.0)), float(data.get('eth', 0.0)), 
                 float(data.get('voc', 0.0)), float(data.get('co', 0.0))
             ]
-            # Parse State Enum to String using STATE_NAMES
             state_idx = int(data.get('state', 0))
             state_name = STATE_NAMES.get(state_idx, "UNKNOWN")
             level = data.get('level', 0)
@@ -303,18 +300,17 @@ class MainWindow(QMainWindow):
     def on_stop_sampling(self):
         """Stop sampling process"""
         self.is_sampling = False
-        if self.update_timer.isActive():
-            self.update_timer.stop()
         
-        # Kirim Command STOP ke Backend
-        if self.network_worker and not self.is_simulation:
-            self.network_worker.send_command("STOP_SAMPLING")
+        # --- KIRIM CMD VIA SERIAL ---
+        if self.serial_connection and self.serial_connection.is_open:
+            try:
+                self.serial_connection.write(b"STOP_SAMPLING\n")
+            except Exception as e:
+                print(f"Serial stop error: {e}")
         
         self.control_panel.enable_start(True)
         self.control_panel.enable_stop(False)
-        
-        status_text = "Simulation Mode" if hasattr(self, 'is_simulation') and self.is_simulation else "Connected"
-        self.connection_panel.set_status(status_text, STATUS_COLORS['connected'])
+        self.connection_panel.set_status("Hybrid Connected", STATUS_COLORS['connected'])
         self.statusBar().showMessage(f"Sampling stopped. Collected {len(self.sampling_times)} data points.")
     
     def update_statistics(self):
@@ -387,4 +383,7 @@ class MainWindow(QMainWindow):
         if self.network_worker:
             self.network_worker.stop()
             self.network_worker.wait()
+        # Close Serial
+        if self.serial_connection:
+            self.serial_connection.close()
         event.accept()

@@ -170,71 +170,77 @@ class ControlPanel(QGroupBox):
 
 
 class ConnectionPanel(QGroupBox):
-    """Connection settings panel"""
+    """Connection settings panel with Hybrid Mode (Serial + Network)"""
     
     connect_clicked = Signal()
     
     def __init__(self, parent=None):
-        super().__init__("Connection Settings", parent)
-        
+        super().__init__("Connection Settings (Hybrid)", parent)
         self.init_ui()
     
     def init_ui(self):
         layout = QHBoxLayout()
         
-        # GANTI COM Port dengan Server IP
-        layout.addWidget(QLabel("Backend IP:"))
+        # --- BAGIAN 1: NETWORK (Untuk Data Stream) ---
+        layout.addWidget(QLabel("Data (WiFi):"))
         self.ip_input = QLineEdit()
-        self.ip_input.setText("127.0.0.1") # Default localhost
-        self.ip_input.setMaximumWidth(120)
+        self.ip_input.setText("127.0.0.1") # IP Backend Rust
+        self.ip_input.setMaximumWidth(100)
+        self.ip_input.setPlaceholderText("Backend IP")
         layout.addWidget(self.ip_input)
         
-        # Port Input (Optional, bisa di hardcode 8082)
-        layout.addWidget(QLabel("Port:"))
-        self.port_input = QLineEdit()
-        self.port_input.setText("8082")
-        self.port_input.setMaximumWidth(60)
-        layout.addWidget(self.port_input)
+        # Line Vertical Separator
+        line = QFrame()
+        line.setFrameShape(QFrame.VLine)
+        line.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(line)
+
+        # --- BAGIAN 2: SERIAL (Untuk Control Motor) ---
+        layout.addWidget(QLabel("Control (USB):"))
+        self.port_selector = QComboBox()
+        self.port_selector.addItems(self.get_available_ports())
+        self.port_selector.setMaximumWidth(100)
+        layout.addWidget(self.port_selector)
         
-        # Hapus Baud Rate (tidak relevan lagi)
+        # Tombol Refresh Port
+        self.refresh_btn = QPushButton("↻")
+        self.refresh_btn.setFixedWidth(30)
+        self.refresh_btn.setToolTip("Refresh COM Ports")
+        self.refresh_btn.clicked.connect(self.refresh_ports)
+        layout.addWidget(self.refresh_btn)
         
-        # Data source
-        layout.addWidget(QLabel("Data Source:"))
-        self.data_source = QComboBox()
-        self.data_source.addItems(["Backend (Rust)", "Simulation"]) # Ubah Label
-        self.data_source.setMaximumWidth(150)
-        layout.addWidget(self.data_source)
-        
-        # ... sisa code sama (Status Indicator, Button)
-        
-        # Status indicator
+        # --- BAGIAN 3: CONNECT BUTTON ---
+        layout.addStretch()
         layout.addWidget(QLabel("Status:"))
         self.status_indicator = StatusIndicator()
         layout.addWidget(self.status_indicator)
         
-        # Connect button
-        self.connect_btn = QPushButton("Connect")
+        self.connect_btn = QPushButton("Connect All")
         self.connect_btn.clicked.connect(self.connect_clicked.emit)
         layout.addWidget(self.connect_btn)
-        
-        layout.addStretch()
         
         self.setLayout(layout)
     
     def get_available_ports(self) -> list:
-        """Get list of available COM ports"""
+        """Mencari COM port yang aktif"""
         try:
             import serial.tools.list_ports
             ports = [port.device for port in serial.tools.list_ports.comports()]
-            return ports if ports else ["COM3", "COM4", "COM5"]
+            return ports if ports else ["No Ports"]
         except:
-            return ["COM3", "COM4", "COM5"]
+            return ["Error"]
+
+    def refresh_ports(self):
+        """Update isi dropdown port"""
+        self.port_selector.clear()
+        self.port_selector.addItems(self.get_available_ports())
     
     def get_connection_settings(self) -> dict:
         return {
             'host': self.ip_input.text(),
-            'port': int(self.port_input.text()),
-            'source': self.data_source.currentText()
+            'port': 8082, # Port default backend
+            'serial_port': self.port_selector.currentText(),
+            'baud_rate': 9600 # Sesuai main.ino
         }
     
     def set_status(self, status_text: str, color_rgb: tuple):
