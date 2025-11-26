@@ -1,170 +1,163 @@
-"""Application styling and themes"""
+"""Application styling and themes (Cute Edition 🌸)"""
 
 STYLESHEET = """
     QMainWindow {
-        background-color: #f5f5f5;
+        background-color: #FFF0F5;  /* Lavender Blush */
     }
     
     QWidget {
-        background-color: #f5f5f5;
-        color: #333333;
+        background-color: #FFF0F5;
+        color: #555555;
+        font-family: 'Segoe UI', sans-serif;
     }
     
+    /* Group Box yang Cute */
     QGroupBox {
-        color: #333333;
-        border: 1px solid #ddd;
-        border-radius: 5px;
-        margin-top: 10px;
-        padding-top: 10px;
+        background-color: white;
+        color: #FF69B4; /* Hot Pink Text */
+        border: 2px solid #FFB7B2;
+        border-radius: 15px;
+        margin-top: 15px;
+        padding: 15px;
         font-weight: bold;
+        font-size: 12px;
     }
     
     QGroupBox::title {
         subcontrol-origin: margin;
-        left: 10px;
-        padding: 0 3px 0 3px;
+        subcontrol-position: top center;
+        padding: 0 10px;
+        background-color: white;
+        border-radius: 5px;
+        color: #FF69B4;
     }
     
+    /* Tombol-tombol Gemoy */
     QPushButton {
-        background-color: #0084ff;
+        background-color: #FFB7B2; /* Pastel Red */
         color: white;
         border: none;
-        border-radius: 5px;
+        border-radius: 12px;
         padding: 8px 16px;
         font-weight: bold;
-        font-size: 11px;
+        font-size: 12px;
     }
     
     QPushButton:hover {
-        background-color: #0073e6;
+        background-color: #FF9AA2;
+        margin-top: -2px; /* Efek naik dikit pas di hover */
     }
     
     QPushButton:pressed {
-        background-color: #0059b3;
+        background-color: #E2F0CB;
+        color: #555;
+        margin-top: 2px;
     }
     
     QPushButton:disabled {
-        background-color: #cccccc;
-        color: #666666;
+        background-color: #E0E0E0;
+        color: #A0A0A0;
     }
     
+    /* Tombol Start Spesial */
     QPushButton#startButton {
-        background-color: #27ae60;
+        background-color: #B5EAD7; /* Mint Green */
+        color: #444;
     }
     
     QPushButton#startButton:hover {
-        background-color: #229954;
+        background-color: #A3E4D7;
     }
     
+    /* Tombol Stop Spesial */
     QPushButton#stopButton {
-        background-color: #e74c3c;
+        background-color: #FFDAC1; /* Peach */
+        color: #444;
     }
     
     QPushButton#stopButton:hover {
-        background-color: #c0392b;
+        background-color: #FFCBA4;
     }
     
-    QLineEdit {
-        border: 1px solid #bbb;
-        border-radius: 4px;
-        padding: 6px;
+    /* Input Fields */
+    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+        border: 2px solid #E2F0CB;
+        border-radius: 10px;
+        padding: 8px;
         background-color: white;
-        font-size: 11px;
+        font-size: 12px;
+        color: #555;
+        selection-background-color: #FF9AA2;
     }
     
-    QLineEdit:focus {
-        border: 2px solid #0084ff;
-    }
-    
-    QComboBox {
-        border: 1px solid #bbb;
-        border-radius: 4px;
-        padding: 6px;
-        background-color: white;
-        font-size: 11px;
+    QLineEdit:focus, QComboBox:focus {
+        border: 2px solid #FF9AA2;
     }
     
     QComboBox::drop-down {
         border: none;
+        width: 20px;
     }
     
+    /* Labels */
     QLabel {
-        color: #333333;
-        font-size: 11px;
+        color: #666;
+        font-size: 12px;
+        font-weight: 500;
     }
     
-    QLabel#statusLabel {
-        font-weight: bold;
-        padding: 4px 8px;
-        border-radius: 3px;
-        background-color: #ffcccc;
-        color: #990000;
-    }
-    
-    QLabel#statusConnected {
-        background-color: #ccffcc;
-        color: #009900;
-    }
-    
-    QLabel#statusSampling {
-        background-color: #ccffffcc;
-        color: #0099cc;
-        font-weight: bold;
-        animation: blink 1s infinite;
-    }
-    
-    QSpinBox, QDoubleSpinBox {
-        border: 1px solid #bbb;
-        border-radius: 4px;
-        padding: 4px;
-        background-color: white;
-    }
-    
-    QCheckBox {
-        spacing: 5px;
-    }
-    
-    QCheckBox::indicator {
-        width: 16px;
-        height: 16px;
-    }
-    
+    /* Status Bar */
     QStatusBar {
-        background-color: #e8e8e8;
-        color: #333333;
-        border-top: 1px solid #ccc;
+        background-color: white;
+        color: #FF69B4;
+        border-top: 2px solid #FFB7B2;
     }
     
-    QMessageBox QLabel {
-        color: #333333;
+    /* Tables */
+    QTableWidget {
+        background-color: white;
+        gridline-color: #FFB7B2;
+        border-radius: 10px;
+        border: 1px solid #FFB7B2;
     }
     
     QHeaderView::section {
-        background-color: #0084ff;
+        background-color: #FFB7B2;
         color: white;
-        padding: 5px;
+        padding: 8px;
         border: none;
+        font-weight: bold;
     }
     
-    QTableWidget {
-        gridline-color: #ddd;
+    QTabWidget::pane { 
+        border: 2px solid #FFB7B2;
+        border-radius: 10px;
         background-color: white;
+        top: -2px; 
     }
     
-    QTableWidget::item {
-        padding: 4px;
+    QTabBar::tab {
+        background: #FFDAC1;
+        border: 2px solid #FFDAC1;
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+        padding: 8px 12px;
+        margin-right: 4px;
+        color: #555;
     }
     
-    QTableWidget::item:selected {
-        background-color: #0084ff;
-        color: white;
+    QTabBar::tab:selected {
+        background: white;
+        border-color: #FFB7B2;
+        color: #FF69B4;
+        font-weight: bold;
     }
 """
 
-# Status colors (RGB tuples)
+# Status colors (Pastel Versions)
 STATUS_COLORS = {
-    'disconnected': (255, 102, 102),  # Red
-    'connected': (102, 255, 102),     # Green
-    'sampling': (102, 178, 255),      # Blue
-    'error': (255, 153, 51)           # Orange
+    'disconnected': (255, 154, 162),  # Pastel Red
+    'connected': (181, 234, 215),     # Pastel Mint Green
+    'sampling': (199, 206, 234),      # Pastel Periwinkle
+    'error': (255, 218, 193)          # Pastel Peach
 }

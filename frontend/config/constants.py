@@ -1,13 +1,13 @@
 """Application constants and configuration"""
 
 # Application Info
-APP_NAME = "Electronic Nose Visualizer"
+APP_NAME = "Electronic Nose Visualizer | Kelompok 6 SPS (Sample Bunga)"
 APP_VERSION = "1.0.0"
 WINDOW_WIDTH = 1400
 WINDOW_HEIGHT = 900
 
 # Serial Communication
-DEFAULT_BAUD_RATE = 115200
+DEFAULT_BAUD_RATE = 9600
 SERIAL_TIMEOUT = 1
 SERIAL_BUFFER_SIZE = 1024
 
@@ -24,12 +24,12 @@ SENSOR_NAMES = [
     "Sensor 4 (MQ-7)"
 ]
 
-# Colors for plotting
+# Cute Pastel Colors for plotting 🌸
 PLOT_COLORS = [
-    '#FF6B6B',  # Red
-    '#4ECDC4',  # Teal
-    '#45B7D1',  # Blue
-    '#FFA07A'   # Salmon
+    '#FF9AA2',  # Pastel Red/Pink
+    '#B5EAD7',  # Pastel Mint
+    '#C7CEEA',  # Pastel Periwinkle
+    '#FFDAC1'   # Pastel Peach
 ]
 
 # Status messages
@@ -38,15 +38,10 @@ STATUS_CONNECTED = "Connected"
 STATUS_SAMPLING = "Sampling..."
 STATUS_ERROR = "Error"
 
-# Sample types
+# Sample types (Flower Theme 🌺)
 SAMPLE_TYPES = [
-    "Kopi Arabika",
-    "Kopi Robusta",
-    "Teh Hijau",
-    "Teh Hitam",
-    "Tembakau Kering",
+    "Bunga Kenanga",
     "Bunga Melati",
-    "Jeruk",
-    "Lainnya"
+    "Bunga Mawar",
+    "Bunga Sedap Malam"
 ]
-# Default COM ports for selection
