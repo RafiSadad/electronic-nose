@@ -1,6 +1,10 @@
 """Main application window"""
 
 import serial
+import requests  # <--- Library untuk Upload ke Edge Impulse
+import json      
+import time      # <--- Untuk Timestamp
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QTabWidget, QTableWidget,
@@ -22,7 +26,7 @@ import csv
 from datetime import datetime
 from pathlib import Path
 
-# Mapping state dari Arduino (Sesuai Kode Pak Zizu)
+# Mapping state dari Arduino (Sesuai FSM Zizu)
 STATE_NAMES = {
     0: "IDLE",
     1: "PRE-COND",
@@ -153,7 +157,7 @@ class MainWindow(QMainWindow):
     def populate_info_table(self):
         info = {
             "Sample Name": "None", "Sample Type": "None",
-            "Duration": "Auto (FSM)", "Points Collected": "0", "Elapsed Time": "0 s"
+            "Mode": "Auto (FSM Zizu)", "Points Collected": "0", "Elapsed Time": "0 s"
         }
         for row, (key, value) in enumerate(info.items()):
             self.info_table.setItem(row, 0, QTableWidgetItem(key))
@@ -252,11 +256,9 @@ class MainWindow(QMainWindow):
         self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
     
     def on_data_received(self, data: dict):
-        """Handle data received from Backend (Signal based)"""
-        # Meskipun tidak sedang sampling, kita tetap bisa memonitor status
-        # tapi data hanya disimpan jika self.is_sampling = True
-        
+        """Handle data received from Backend"""
         try:
+            # Ambil 7 Data Sensor
             sensor_values = [
                 float(data.get('no2', 0.0)),
                 float(data.get('eth', 0.0)), 
@@ -271,14 +273,15 @@ class MainWindow(QMainWindow):
             state_name = STATE_NAMES.get(state_idx, "UNKNOWN")
             level = data.get('level', 0)
             
-            # Update status bar dengan fase Zizu
+            # Update Status Bar Real-time
             self.statusBar().showMessage(f"System State: {state_name} | Level: {level}")
             
             if self.is_sampling:
                 self.process_new_data(sensor_values)
                 
-                # --- LOGIKA BARU: Stop Otomatis jika DONE (State 6) ---
-                if state_idx == 6: # DONE
+                # === LOGIKA AUTO STOP (Zizu FSM) ===
+                # Jika State == 6 (DONE), hentikan sampling otomatis
+                if state_idx == 6: 
                     self.on_stop_sampling()
                     QMessageBox.information(self, "Finished", "Sampling sequence completed (All Levels Done)!")
                     
@@ -293,7 +296,7 @@ class MainWindow(QMainWindow):
             
         self.plot_widget.add_data_point(self.start_time, sensor_values)
         
-        # Simpan data
+        # Simpan data ke memori
         for i, val in enumerate(sensor_values[:NUM_SENSORS]):
             self.sampling_data[i].append(val)
         self.sampling_times.append(self.start_time)
@@ -301,9 +304,6 @@ class MainWindow(QMainWindow):
         self.info_table.setItem(4, 1, QTableWidgetItem(f"{self.start_time:.2f} s"))
         self.info_table.setItem(3, 1, QTableWidgetItem(str(len(self.sampling_times))))
         self.update_statistics()
-        
-        # --- PERUBAHAN: TIDAK ADA LAGI STOP BERDASARKAN WAKTU ---
-        # Stop hanya dipicu oleh state_idx == 6 di on_data_received
 
     def on_stop_sampling(self):
         self.is_sampling = False
@@ -345,7 +345,6 @@ class MainWindow(QMainWindow):
                 writer.writerow(["Sample Name", sample_info['name']])
                 writer.writerow(["Sample Type", sample_info['type']])
                 writer.writerow(["Export Date", datetime.now().isoformat()])
-                writer.writerow(["Mode", "Auto FSM (Zizu)"])
                 writer.writerow(["Number of Points", len(self.sampling_times)])
                 writer.writerow([])
                 headers = ["Time (s)"] + [SENSOR_NAMES[i] for i in range(NUM_SENSORS)]
@@ -370,10 +369,61 @@ class MainWindow(QMainWindow):
             self.sampling_times = []
             self.statusBar().showMessage("Plot cleared")
     
+    # === FITUR BARU: UPLOAD KE EDGE IMPULSE ===
     def on_edge_impulse(self):
-        import webbrowser
-        webbrowser.open("https://studio.edgeimpulse.com/")
-        QMessageBox.information(self, "Info", "Edge Impulse opened in your default browser.")
+        # 1. Cek apakah ada data
+        if not self.sampling_times:
+            QMessageBox.warning(self, "Warning", "No data to upload! Please sample first.")
+            return
+
+        # 2. Ambil Info Sampel dari GUI
+        sample_info = self.control_panel.get_sample_info()
+        label = sample_info['type']  # Label otomatis dari Dropdown
+        
+        # === KONFIGURASI API EDGE IMPULSE ===
+        API_KEY = "ei_0392b57ff02dc26f707401ad1067f0f597300286d4be9d0223b39487d061189f"  # <--- SUDAH DIUPDATE
+        INGESTION_URL = "https://ingestion.edgeimpulse.com/api/training/data"
+        
+        # 3. Format Data ke CSV String (Sesuai format Edge Impulse)
+        # Header CSV: timestamp,sensor1,sensor2,...
+        csv_content = "timestamp," + ",".join(SENSOR_NAMES[:NUM_SENSORS]) + "\n"
+        
+        # Isi Data
+        for i, t in enumerate(self.sampling_times):
+            # Timestamp harus dalam Milliseconds (ms)
+            timestamp_ms = int(t * 1000) 
+            
+            row = [str(timestamp_ms)]
+            for sensor_idx in range(NUM_SENSORS):
+                # Ambil data sensor, default 0 jika error/kosong
+                val = self.sampling_data[sensor_idx][i] if i < len(self.sampling_data[sensor_idx]) else 0.0
+                row.append(f"{val:.4f}")
+            
+            csv_content += ",".join(row) + "\n"
+
+        # 4. Kirim ke Edge Impulse
+        self.statusBar().showMessage(f"Uploading to Edge Impulse as '{label}'...")
+        
+        headers = {
+            "x-api-key": API_KEY,
+            "x-label": label,
+            "x-file-name": f"{sample_info['name']}_{int(time.time())}.csv",
+            "Content-Type": "text/csv"
+        }
+
+        try:
+            response = requests.post(INGESTION_URL, data=csv_content, headers=headers)
+            
+            if response.status_code == 200:
+                QMessageBox.information(self, "Success", f"Uploaded Successfully!\nLabel: {label}\nFile: {headers['x-file-name']}")
+                self.statusBar().showMessage("Upload Success!")
+            else:
+                QMessageBox.critical(self, "Upload Failed", f"Error {response.status_code}:\n{response.text}")
+                self.statusBar().showMessage("Upload Failed")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Connection Error", f"Could not connect to Edge Impulse:\n{str(e)}")
+            self.statusBar().showMessage("Connection Error")
     
     def on_export_csv(self):
         self.on_save_data()
