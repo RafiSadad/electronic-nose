@@ -151,8 +151,12 @@ async fn process_sensor_data(line: &str, db_client: &Arc<Client>, tx: &broadcast
             .field("level", data.level as i64)
             .build();
 
+
         if let Ok(p) = point {
-            let _ = db_client.write("electronic_nose", futures::stream::iter(vec![p])).await;
+            let result = db_client.write("electronic_nose", futures::stream::iter(vec![p])).await;
+            if let Err(e) = result {
+                println!("❌ Gagal simpan ke InfluxDB: {}", e);
+            }
         }
     }
 }
