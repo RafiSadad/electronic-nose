@@ -1,7 +1,10 @@
 """Main application window"""
-import subprocess
-import sys
+
 import serial
+import subprocess
+import webbrowser
+from pathlib import Path
+from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QTabWidget, QTableWidget,
@@ -10,28 +13,20 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFont
 
-from gui.widgets import ControlPanel, ConnectionPanel, SensorPlot
+# Import Modules Sendiri
+from gui.widgets import ControlPanel, ConnectionPanel, SensorPlot, GnuplotWidget
 from gui.styles import STYLESHEET, STATUS_COLORS
 from utils.network_comm import NetworkWorker
+from utils.file_handler import FileHandler
 from config.constants import (
     APP_NAME, WINDOW_WIDTH, WINDOW_HEIGHT, 
     UPDATE_INTERVAL, SENSOR_NAMES, NUM_SENSORS
 )
 
-import numpy as np
-import csv
-from datetime import datetime
-from pathlib import Path
-
-# Mapping state dari Arduino (Sesuai Kode Pak Zizu)
+# Mapping state dari Arduino
 STATE_NAMES = {
-    0: "IDLE",
-    1: "PRE-COND",
-    2: "RAMP_UP",
-    3: "HOLD",
-    4: "PURGE",
-    5: "RECOVERY",
-    6: "DONE"
+    0: "IDLE", 1: "PRE-COND", 2: "RAMP_UP", 3: "HOLD",
+    4: "PURGE", 5: "RECOVERY", 6: "DONE"
 }
 
 class MainWindow(QMainWindow):
@@ -85,10 +80,7 @@ class MainWindow(QMainWindow):
         # Data info table
         info_group_layout = QVBoxLayout()
         info_label = QLabel("📈 Sampling Information")
-        info_label_font = QFont()
-        info_label_font.setBold(True)
-        info_label_font.setPointSize(11)
-        info_label.setFont(info_label_font)
+        info_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
         info_group_layout.addWidget(info_label)
         
         self.info_table = QTableWidget(5, 2)
@@ -108,16 +100,11 @@ class MainWindow(QMainWindow):
         tab3_layout = QVBoxLayout()
         
         stats_label = QLabel("📊 Data Statistics")
-        stats_label.setFont(info_label_font)
+        stats_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
         tab3_layout.addWidget(stats_label)
         
-        # Setup tabel statistik sesuai jumlah sensor
-        self.stats_table = QTableWidget(NUM_SENSORS + 1, 5) # +1 buffer
-        self.stats_table.setHorizontalHeaderLabels([
-            "Sensor", "Min", "Max", "Mean", "Std Dev"
-        ])
-        for i in range(5):
-            self.stats_table.setColumnWidth(i, 150)
+        self.stats_table = QTableWidget(NUM_SENSORS + 1, 5)
+        self.stats_table.setHorizontalHeaderLabels(["Sensor", "Min", "Max", "Mean", "Std Dev"])
         self.populate_stats_table()
         tab3_layout.addWidget(self.stats_table)
         
@@ -135,7 +122,7 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.edge_impulse_btn)
         
         self.export_csv_btn = QPushButton("📥 Export as CSV")
-        self.export_csv_btn.clicked.connect(self.on_export_csv)
+        self.export_csv_btn.clicked.connect(self.on_save_data)
         button_layout.addWidget(self.export_csv_btn)
         
         self.clear_btn = QPushButton("🗑️ Clear Plot")
@@ -164,23 +151,17 @@ class MainWindow(QMainWindow):
         for row in range(NUM_SENSORS):
             sensor_name = SENSOR_NAMES[row] if row < len(SENSOR_NAMES) else f"Sensor {row+1}"
             self.stats_table.setItem(row, 0, QTableWidgetItem(sensor_name))
-            for col in range(1, 5):
-                self.stats_table.setItem(row, col, QTableWidgetItem("0.00"))
     
     def on_connect(self):
-        """Handle connection button click (HYBRID MODE)"""
         settings = self.connection_panel.get_connection_settings()
-        
         if self.network_worker:
             self.network_worker.stop()
             self.network_worker.wait()
             self.network_worker = None
 
-        self.statusBar().showMessage(f"Connecting Data to {settings['host']} and Control to {settings['serial_port']}...")
+        self.statusBar().showMessage(f"Connecting to {settings['host']}...")
         self.connection_panel.set_status("Connecting...", STATUS_COLORS['sampling'])
-        
         self.connection_panel.connect_btn.setEnabled(False)
-        self.connection_panel.connect_btn.setText("Connecting...")
         
         self.network_worker = NetworkWorker(host=settings['host'], port=settings['port'])
         self.network_worker.data_received.connect(self.on_data_received)
@@ -190,19 +171,15 @@ class MainWindow(QMainWindow):
 
         if self.serial_connection and self.serial_connection.is_open:
             self.serial_connection.close()
-            
+        
         if settings['serial_port'] != "No Ports":
             try:
-                self.serial_connection = serial.Serial(
-                    settings['serial_port'], 
-                    settings['baud_rate'], 
-                    timeout=1
-                )
+                self.serial_connection = serial.Serial(settings['serial_port'], settings['baud_rate'], timeout=1)
                 print(f"✅ Serial Connected: {settings['serial_port']}")
             except Exception as e:
-                QMessageBox.warning(self, "Serial Error", f"Failed to connect to Serial Port: {e}")
+                QMessageBox.warning(self, "Serial Error", f"Failed: {e}")
         else:
-            QMessageBox.warning(self, "Warning", "No Serial Port selected. Motor control will not work!")
+            QMessageBox.warning(self, "Warning", "No Serial Port selected!")
 
     def handle_network_error(self, msg: str):
         self.statusBar().showMessage(msg)
@@ -229,7 +206,6 @@ class MainWindow(QMainWindow):
         
         self.info_table.setItem(0, 1, QTableWidgetItem(sample_info['name']))
         self.info_table.setItem(1, 1, QTableWidgetItem(sample_info['type']))
-        self.info_table.setItem(2, 1, QTableWidgetItem("Auto (Wait for DONE)"))
         
         self.sampling_data = {i: [] for i in range(NUM_SENSORS)}
         self.sampling_times = []
@@ -244,91 +220,59 @@ class MainWindow(QMainWindow):
         if self.serial_connection and self.serial_connection.is_open:
             try:
                 self.serial_connection.write(b"START_SAMPLING\n")
-                self.statusBar().showMessage("Sampling Started (Command sent via Serial)")
+                self.statusBar().showMessage("Sampling Started via Serial")
             except Exception as e:
-                QMessageBox.critical(self, "Serial Error", f"Failed to send start command: {e}")
-        else:
-            self.statusBar().showMessage("Sampling Started (WARNING: Serial not connected!)")
-            
+                QMessageBox.critical(self, "Serial Error", f"Failed: {e}")
+        
         self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
     
     def on_data_received(self, data: dict):
-        """Handle data received from Backend (Signal based)"""
-        # Meskipun tidak sedang sampling, kita tetap bisa memonitor status
-        # tapi data hanya disimpan jika self.is_sampling = True
-        
         try:
             sensor_values = [
-                float(data.get('no2', 0.0)),
-                float(data.get('eth', 0.0)), 
-                float(data.get('voc', 0.0)),
-                float(data.get('co', 0.0)),
-                float(data.get('co_mics', 0.0)),
-                float(data.get('eth_mics', 0.0)),
+                float(data.get('no2', 0.0)), float(data.get('eth', 0.0)), 
+                float(data.get('voc', 0.0)), float(data.get('co', 0.0)),
+                float(data.get('co_mics', 0.0)), float(data.get('eth_mics', 0.0)),
                 float(data.get('voc_mics', 0.0))
             ]
-            
             state_idx = int(data.get('state', 0))
             state_name = STATE_NAMES.get(state_idx, "UNKNOWN")
             level = data.get('level', 0)
             
-            # Update status bar dengan fase Zizu
             self.statusBar().showMessage(f"System State: {state_name} | Level: {level}")
             
             if self.is_sampling:
-                self.process_new_data(sensor_values)
+                if not self.sampling_times:
+                    self.start_time = 0.0
+                else:
+                    self.start_time += self.update_interval / 1000.0
                 
-                # --- LOGIKA BARU: Stop Otomatis jika DONE (State 6) ---
+                self.plot_widget.add_data_point(self.start_time, sensor_values)
+                for i, val in enumerate(sensor_values[:NUM_SENSORS]):
+                    self.sampling_data[i].append(val)
+                self.sampling_times.append(self.start_time)
+                
+                self.info_table.setItem(4, 1, QTableWidgetItem(f"{self.start_time:.2f} s"))
+                self.info_table.setItem(3, 1, QTableWidgetItem(str(len(self.sampling_times))))
+                
                 if state_idx == 6: # DONE
                     self.on_stop_sampling()
-                    QMessageBox.information(self, "Finished", "Sampling sequence completed (All Levels Done)!")
-                    
+                    QMessageBox.information(self, "Finished", "Sampling sequence completed!")
         except Exception as e:
             print(f"Error parsing data: {e}")
-
-    def process_new_data(self, sensor_values: list):
-        if not self.sampling_times:
-            self.start_time = 0.0
-        else:
-            self.start_time += self.update_interval / 1000.0
-            
-        self.plot_widget.add_data_point(self.start_time, sensor_values)
-        
-        # Simpan data
-        for i, val in enumerate(sensor_values[:NUM_SENSORS]):
-            self.sampling_data[i].append(val)
-        self.sampling_times.append(self.start_time)
-        
-        self.info_table.setItem(4, 1, QTableWidgetItem(f"{self.start_time:.2f} s"))
-        self.info_table.setItem(3, 1, QTableWidgetItem(str(len(self.sampling_times))))
-        self.update_statistics()
-        
-        # --- PERUBAHAN: TIDAK ADA LAGI STOP BERDASARKAN WAKTU ---
-        # Stop hanya dipicu oleh state_idx == 6 di on_data_received
 
     def on_stop_sampling(self):
         self.is_sampling = False
         if self.serial_connection and self.serial_connection.is_open:
             try:
                 self.serial_connection.write(b"STOP_SAMPLING\n")
-            except Exception as e:
-                print(f"Serial stop error: {e}")
+            except: pass
         
         self.control_panel.enable_start(True)
         self.control_panel.enable_stop(False)
         self.connection_panel.set_status("Hybrid Connected", STATUS_COLORS['connected'])
-        self.statusBar().showMessage(f"Sampling stopped. Collected {len(self.sampling_times)} data points.")
+        self.statusBar().showMessage(f"Stopped. Collected {len(self.sampling_times)} points.")
     
-    def update_statistics(self):
-        """Update statistics table"""
-        for sensor_id in range(NUM_SENSORS):
-            if self.sampling_data[sensor_id]:
-                data = np.array(self.sampling_data[sensor_id])
-                self.stats_table.setItem(sensor_id, 1, QTableWidgetItem(f"{data.min():.2f}"))
-                self.stats_table.setItem(sensor_id, 2, QTableWidgetItem(f"{data.max():.2f}"))
-                self.stats_table.setItem(sensor_id, 3, QTableWidgetItem(f"{data.mean():.2f}"))
-                self.stats_table.setItem(sensor_id, 4, QTableWidgetItem(f"{data.std():.2f}"))
-    
+    # --- FITUR 1: SAVE CSV + GNUPLOT ---
     def on_save_data(self):
         if not self.sampling_times:
             QMessageBox.warning(self, "Warning", "No data to save!")
@@ -339,93 +283,67 @@ class MainWindow(QMainWindow):
         filename = f"data/{sample_info['name'].replace(' ', '_')}_{timestamp}.csv"
         
         try:
-            # Pastikan folder data ada
-            Path("data").mkdir(exist_ok=True)
-            
-            # Tulis file CSV
-            with open(filename, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(["Electronic Nose Data Export"])
-                writer.writerow(["Sample Name", sample_info['name']])
-                writer.writerow(["Sample Type", sample_info['type']])
-                writer.writerow(["Export Date", datetime.now().isoformat()])
-                writer.writerow(["Mode", "Auto 30 Min (FSM)"])
-                writer.writerow(["Number of Points", len(self.sampling_times)])
-                writer.writerow([])
-                headers = ["Time (s)"] + [SENSOR_NAMES[i] for i in range(NUM_SENSORS)]
-                writer.writerow(headers)
-                for t_idx, t in enumerate(self.sampling_times):
-                    row = [f"{t:.3f}"]
-                    for s_idx in range(NUM_SENSORS):
-                        if t_idx < len(self.sampling_data[s_idx]):
-                            row.append(f"{self.sampling_data[s_idx][t_idx]:.2f}")
-                        else:
-                            row.append("0")
-                    writer.writerow(row)
-            
-            # Beri info sukses
+            # Simpan CSV
+            FileHandler.save_as_csv(filename, sample_info, self.sampling_data, 
+                                  self.sampling_times, SENSOR_NAMES)
             QMessageBox.information(self, "Success", f"Data saved to {filename}")
 
-            # --- TAMBAHAN: Auto Open GNUPLOT ---
-            # Pastikan kode ini sejajar (indentasi sama) dengan QMessageBox di atas
-            reply = QMessageBox.question(self, "Visualisasi", 
-                                       "Buka grafik di GNUPLOT?", 
+            # Tanya Gnuplot
+            reply = QMessageBox.question(self, "Visualisasi", "Buka grafik di GNUPLOT?", 
                                        QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.Yes:
                 self.open_gnuplot(filename)
-            # -----------------------------------
-
         except Exception as e:
-            # INI BAGIAN YANG HILANG SEBELUMNYA
-            QMessageBox.critical(self, "Error", f"Failed to save data: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed: {str(e)}")
+
+    def open_gnuplot(self, csv_filename):
+        png_filename = csv_filename.replace('.csv', '.png')
+        script_path = "plot_config.plt"
+        try:
+            # Generate PNG
+            cmd = ["gnuplot", "-c", script_path, csv_filename, png_filename]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                # Buka Widget Gambar
+                viewer = GnuplotWidget(png_filename, self)
+                viewer.exec()
+            else:
+                QMessageBox.warning(self, "Gnuplot Error", f"Gagal generate:\n{result.stderr}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"System Error:\n{str(e)}")
+
+    # --- FITUR 2: EDGE IMPULSE UPLOAD ---
+    def on_edge_impulse(self):
+        if not self.sampling_times:
+            QMessageBox.warning(self, "Warning", "No data to upload!")
+            return
+
+        sample_info = self.control_panel.get_sample_info()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"data/{sample_info['name'].replace(' ', '_')}_{timestamp}.json"
+
+        try:
+            success = FileHandler.save_edge_impulse_json(
+                filename, sample_info['name'], SENSOR_NAMES,
+                self.sampling_data, self.update_interval
+            )
+
+            if success:
+                QMessageBox.information(self, "Ready", f"JSON created at:\n{filename}\n\nBrowser opening...")
+                webbrowser.open("https://studio.edgeimpulse.com/studio/select-project?next=/data-acquisition")
+            else:
+                QMessageBox.warning(self, "Error", "Gagal menyimpan JSON.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error: {str(e)}")
     
     def on_clear_plot(self):
-        reply = QMessageBox.question(self, "Confirm", "Clear all data and plot?", QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
+        if QMessageBox.question(self, "Confirm", "Clear data?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             self.plot_widget.clear_data()
             self.sampling_data = {i: [] for i in range(NUM_SENSORS)}
             self.sampling_times = []
-            self.statusBar().showMessage("Plot cleared")
-    
-    def on_edge_impulse(self):
-        import webbrowser
-        webbrowser.open("https://studio.edgeimpulse.com/")
-        QMessageBox.information(self, "Info", "Edge Impulse opened in your default browser.")
-    
-    def on_export_csv(self):
-        self.on_save_data()
-    
+
     def closeEvent(self, event):
-        if self.is_sampling:
-            reply = QMessageBox.question(self, "Confirm", "Sampling in progress. Exit anyway?", QMessageBox.Yes | QMessageBox.No)
-            if reply == QMessageBox.No:
-                event.ignore()
-                return
-        if self.network_worker:
-            self.network_worker.stop()
-            self.network_worker.wait()
-        if self.serial_connection:
-            self.serial_connection.close()
+        if self.network_worker: self.network_worker.stop()
+        if self.serial_connection: self.serial_connection.close()
         event.accept()
-
-    def open_gnuplot(self, filename):
-        """Membuka GNUPLOT untuk memvisualisasikan file CSV"""
-        try:
-            # Sesuaikan path script plt Anda
-            # Asumsi: script ada di folder root project, satu level di atas folder frontend
-            script_path = str(Path(__file__).parent.parent.parent / "plot_config.plt")
-            
-            # Jika dijalankan dari folder frontend
-            if not Path(script_path).exists():
-                 # Coba cari di folder saat ini jika script ditaruh di dalam frontend
-                 script_path = "plot_config.plt"
-
-            # Command untuk menjalankan gnuplot
-            # -c artinya pass argument ke script
-            cmd = ["gnuplot", "-c", script_path, filename]
-            
-            subprocess.Popen(cmd, shell=True)
-            self.statusBar().showMessage(f"Opening GNUPLOT for {filename}...")
-            
-        except Exception as e:
-            QMessageBox.warning(self, "GNUPLOT Error", f"Gagal membuka GNUPLOT:\n{str(e)}")

@@ -3,10 +3,11 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QLineEdit, QComboBox, QSpinBox,
-    QCheckBox, QGroupBox, QFrame, QSizePolicy
+    QCheckBox, QGroupBox, QFrame, QSizePolicy, 
 )
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QColor, QFont, QPainter, QBrush
+from PySide6.QtGui import QColor, QFont, QPainter, QBrush, QPixmap
+from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QScrollArea
 
 import pyqtgraph as pg
 import numpy as np
@@ -267,3 +268,69 @@ class ConnectionPanel(QGroupBox):
     
     def set_status(self, status_text: str, color_rgb: tuple):
         self.status_indicator.set_status(status_text, color_rgb)
+
+
+
+class GnuplotWidget(QDialog):
+    """Widget pop-up untuk menampilkan hasil render GNUPLOT"""
+    def __init__(self, image_path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Visualisasi GNUPLOT")
+        self.resize(1100, 700)
+        
+        layout = QVBoxLayout()
+        
+        # Area Scroll (jaga-jaga kalau gambarnya besar)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        
+        # Label untuk gambar
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignCenter)
+        
+        # Load gambar
+        pixmap = QPixmap(image_path)
+        if not pixmap.isNull():
+            self.image_label.setPixmap(pixmap)
+        else:
+            self.image_label.setText("Gagal memuat gambar GNUPLOT")
+            
+        scroll.setWidget(self.image_label)
+        layout.addWidget(scroll)
+        
+        self.setLayout(layout)
+
+
+# --- TAMBAHAN DI PALING BAWAH FILE ---
+
+from PySide6.QtWidgets import QDialog, QScrollArea
+from PySide6.QtGui import QPixmap
+
+class GnuplotWidget(QDialog):
+    """Widget pop-up untuk menampilkan hasil render GNUPLOT"""
+    def __init__(self, image_path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Visualisasi GNUPLOT")
+        self.resize(1100, 700)
+        
+        layout = QVBoxLayout()
+        
+        # Area Scroll
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        
+        # Label untuk gambar
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignCenter)
+        
+        # Load gambar
+        pixmap = QPixmap(image_path)
+        if not pixmap.isNull():
+            self.image_label.setPixmap(pixmap)
+        else:
+            self.image_label.setText("Gagal memuat gambar GNUPLOT")
+            
+        scroll.setWidget(self.image_label)
+        layout.addWidget(scroll)
+        
+        self.setLayout(layout)
