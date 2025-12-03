@@ -10,149 +10,112 @@
 **Proyek Mata Kuliah Sistem Pengolahan Sinyal**
 Departemen Teknik Instrumentasi, Institut Teknologi Sepuluh Nopember (ITS).
 
-Aplikasi ini digunakan untuk visualisasi dan pengolahan data sensor gas (*electronic nose*). Berikut adalah panduan instalasi dan menjalankan aplikasi dari nol.
+Aplikasi ini digunakan untuk visualisasi dan pengolahan data sensor gas (*electronic nose*) berbasis Arduino Uno R4 WiFi. Aplikasi dilengkapi dengan integrasi **GNUPLOT** untuk visualisasi sinyal dan **Edge Impulse** untuk Machine Learning.
 
 ---
 
 ## 📋 Fungsi & Fitur Utama
 
-Sistem Electronic Nose berbasis IoT yang terdistribusi untuk akuisisi, pengolahan, penyimpanan, dan visualisasi data sensor gas secara *real-time*. Sistem ini terdiri dari 4 komponen utama yang saling terhubung:
-
-* **Embedded (Arduino Uno R4 WiFi):** Membaca sensor gas (MQ/MICS) dan mengontrol aktuator (pompa/fan), lalu mengirim data mentah via TCP.
-* **Backend (Rust):** Server performa tinggi yang menerima data dari Arduino, menyimpannya ke database, dan mem-*broadcast* data ke Frontend.
-* **Database (InfluxDB):** *Time-series* database untuk menyimpan history data sensor secara efisien.
-* **Frontend (Python/Qt):** Aplikasi Desktop GUI untuk memvisualisasikan grafik secara *real-time*, mengontrol sampling, dan mengekspor data (CSV).
+Sistem ini terdiri dari 4 komponen utama yang saling terhubung:
+1.  **Embedded (Arduino Uno R4 WiFi):** Membaca 7 parameter sensor gas (MQ/MICS) dan mengontrol aktuator (pompa/fan).
+2.  **Backend (Rust):** Server performa tinggi (TCP) untuk komunikasi data dua arah.
+3.  **Frontend (Python/Qt):** GUI Desktop untuk kontrol sampling, visualisasi *real-time*, dan ekspor data.
+4.  **Database (InfluxDB):** Penyimpanan data *time-series* jangka panjang.
 
 ---
 
 ## 🛠️ Prerequisites (Prasyarat)
 
-Sebelum memulai, pastikan software berikut sudah terinstall di komputer kamu:
-
-1.  **Docker Desktop** (Wajib untuk Database) - [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)
-2.  **Rust Toolchain** (Untuk Backend) - [Download rustup-init.exe](https://www.rust-lang.org/tools/install)
-3.  **Python 3.8+** (Untuk Frontend) - *Pastikan centang "Add Python to PATH" saat install.*
-4.  **Arduino IDE** (Untuk upload kode ke mikrokontroler) - *Install Board Package: Arduino UNO R4 Boards.*
+Pastikan software berikut sudah terinstall:
+1.  **Docker Desktop** (Wajib untuk Database)
+2.  **Rust Toolchain** (Untuk Backend)
+3.  **Python 3.8+** (Untuk Frontend)
+4.  **Gnuplot** (Wajib untuk visualisasi grafik akhir)
+    * *Windows:* Download dari [SourceForge](https://sourceforge.net/projects/gnuplot/). Saat install, **WAJIB** centang *"Add to PATH"*.
 
 ---
 
-## ⚙️ Setup & Installation
+## 🚀 Cara Menjalankan (Quick Start)
 
-Ikuti langkah-langkah ini secara berurutan:
-
-### 1. Setup Database (InfluxDB)
-Kita menggunakan Docker agar tidak perlu install manual.
+**Langkah 1: Nyalakan Database**
 ```bash
-# Di terminal (root folder project)
 docker-compose up -d
 ````
 
-  * **Verifikasi:** Buka browser ke `http://localhost:8086`.
-  * **Login Default:** Username: `admin`, Password: `adminpassword` (Sesuai `docker-compose.yml`).
-
-### 2\. Setup Backend (Rust)
-
-Backend bertugas menjembatani Arduino dan Python.
-
-```bash
-cd backend
-cargo build
-# Tunggu sampai proses download dependencies dan compile selesai
-```
-
-### 3\. Setup Frontend (Python)
-
-Disarankan menggunakan virtual environment.
-
-```bash
-cd frontend
-
-# Buat virtual environment
-python -m venv venv
-
-# Aktifkan venv
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 4\. Setup Embedded (Arduino)
-
-⚠️ **PENTING: Konfigurasi IP Address.**
-
-1.  Buka Command Prompt (Windows), ketik `ipconfig`. Catat **IPv4 Address** komputer kamu (misal: `192.168.1.37`).
-2.  Buka file `embedded/main.ino` di Arduino IDE.
-3.  Edit baris berikut:
-    ```cpp
-    const char* ssid = "NAMA_WIFI_KAMU";
-    const char* pass = "PASSWORD_WIFI_KAMU";
-    const char* RUST_IP = "192.168.1.37"; // <--- GANTI DENGAN IP KOMPUTER KAMU
-    ```
-4.  Upload sketch ke Arduino Uno R4 WiFi.
-
------
-
-## 🚀 How to Run (Cara Menjalankan)
-
-Nyalakan sistem dengan urutan berikut agar koneksi berhasil:
-
-### Langkah 1: Jalankan Database
-
-Pastikan container Docker sudah berjalan (biasanya otomatis jika sudah `up -d`, cek di aplikasi Docker Desktop).
-
-### Langkah 2: Jalankan Backend Server
-
-Buka terminal baru:
+**Langkah 2: Jalankan Backend**
 
 ```bash
 cd backend
 cargo run
 ```
 
-*Tunggu sampai muncul pesan: "Listening for Arduino on port 8081" & "Listening for Frontend on port 8082".*
-
-### Langkah 3: Nyalakan Arduino
-
-Reset atau colokkan power Arduino. Lihat Serial Monitor di Arduino IDE.
-*Tunggu sampai muncul: **WiFi Connected\!***
-
-### Langkah 4: Jalankan Frontend GUI
-
-Buka terminal baru (pastikan ada di folder `frontend` dan venv aktif):
+**Langkah 3: Jalankan Frontend GUI**
 
 ```bash
 cd frontend
 python main.py
 ```
 
------
-
-## 🎮 Cara Menggunakan Aplikasi
-
-1.  **Koneksi:**
-      * Di panel kiri ("Connection Settings"), isi **Backend IP** dengan `127.0.0.1` (karena GUI dan Backend di satu PC).
-      * Pilih Source: **Backend (Rust)**.
-      * Klik **Connect**. Status harusnya berubah jadi hijau (Connected).
-2.  **Sampling:**
-      * Isi **Sample Name** (contoh: "Kopi Gayo").
-      * Klik **Start Sampling**.
-      * Grafik akan bergerak *real-time* dan motor di alat akan menyala sesuai fase (Pre-cond, Ramp, Hold, dll).
-3.  **Simpan:**
-      * Setelah selesai, klik **Save Data** untuk menyimpan ke CSV/JSON.
+*(Pastikan Arduino sudah menyala dan terhubung ke WiFi yang sama dengan Laptop)*
 
 -----
 
-## ❓ Troubleshooting
+## 🎮 Cara Penggunaan & Output
 
-  * **Error: `The system cannot find the file specified` saat `docker-compose up`:**
-    Pastikan aplikasi **Docker Desktop** sudah dibuka dan statusnya "Engine Running".
-  * **Arduino tidak connect ke Backend:**
-      * Matikan **Firewall** Windows sebentar atau Allow Access untuk program Backend saat muncul pop-up.
-      * Pastikan IP di `main.ino` sama persis dengan IP komputer server.
-      * Pastikan Laptop dan Arduino connect ke WiFi yang sama.
-  * **Python Error `Module not found`:**
-    Pastikan sudah mengaktifkan virtual environment (`venv\Scripts\activate`) sebelum menjalankan `python main.py`.
+### A. Sampling Data
+
+1.  Isi **Sample Name** (contoh: "Kopi Gayo") dan pilih **Jenis Bunga**.
+2.  Klik **Start Sampling**.
+3.  Grafik *real-time* akan muncul, dan motor/pompa pada alat akan bekerja sesuai siklus *Pre-cond, Ramp, Hold, Purge*.
+4.  Klik **Stop** jika proses pengambilan data selesai.
+
+### B. Menyimpan & Visualisasi (Output)
+
+Klik tombol **💾 Save Data** untuk menyimpan hasil sampling. Aplikasi akan melakukan dua hal:
+
+1.  **Menyimpan File CSV:** Data mentah disimpan ke folder `data/` dengan format `.csv`.
+2.  **Visualisasi GNUPLOT Otomatis:**
+      * Aplikasi akan menanyakan: *"Buka grafik di GNUPLOT?"*.
+      * Jika **Yes**, grafik respons sensor yang rapi (format PNG) akan langsung muncul di dalam jendela aplikasi.
+      * Grafik ini wajib disertakan dalam Laporan EAS.
+
+-----
+
+## ☁️ Integrasi Edge Impulse
+
+Aplikasi ini mendukung ekspor data khusus untuk platform Machine Learning **Edge Impulse**.
+
+**Cara Upload:**
+
+1.  Lakukan sampling data seperti biasa.
+2.  Klik tombol **🚀 Upload to Edge Impulse**.
+3.  Aplikasi akan otomatis:
+      * Membuat file **JSON** (bukan CSV) yang sesuai dengan standar *Data Acquisition Format* Edge Impulse.
+      * Menampilkan lokasi file JSON tersebut.
+      * Membuka browser otomatis ke halaman **Edge Impulse Studio**.
+4.  Di browser (halaman *Upload Data*), pilih file JSON yang baru saja dibuat, lalu klik **Upload**.
+5.  Data grafik akan langsung muncul di Edge Impulse tanpa perlu konfigurasi kolom manual.
+
+-----
+
+## ❓ Troubleshooting Umum
+
+  * **Error: `gnuplot not found`**
+      * Pastikan Gnuplot sudah diinstall dan opsi *"Add to PATH"* dicentang. Coba restart VS Code/Terminal.
+  * **Browser tidak terbuka saat klik Edge Impulse:**
+      * Cek koneksi internet. File JSON tetap tersimpan di folder `data/`, Anda bisa upload manual ke [studio.edgeimpulse.com](https://studio.edgeimpulse.com).
+  * **Grafik Real-time diam:**
+      * Cek apakah Arduino terhubung ke WiFi (lihat Serial Monitor Arduino).
+      * Pastikan IP di kode Arduino (`main.ino`) sama dengan IP Laptop.
+
+<!-- end list -->
+
+```
+
+Di video berikut ini Anda dapat melihat bagaimana cara menghubungkan perangkat kustom ke Edge Impulse menggunakan data forwarding yang konsepnya mirip dengan ekspor CSV/JSON [Data Collection to Edge Impulse](https://www.youtube.com/watch?v=rszoQsMIIAI).
+
+Video ini relevan karena mendemonstrasikan alur kerja pengumpulan data sensor (mirip dengan E-Nose Anda) dan cara mengunggahnya ke Edge Impulse untuk analisis lebih lanjut.
+
+
+http://googleusercontent.com/youtube_content/0
+```
