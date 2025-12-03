@@ -339,7 +339,10 @@ class MainWindow(QMainWindow):
         filename = f"data/{sample_info['name'].replace(' ', '_')}_{timestamp}.csv"
         
         try:
+            # Pastikan folder data ada
             Path("data").mkdir(exist_ok=True)
+            
+            # Tulis file CSV
             with open(filename, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(["Electronic Nose Data Export"])
@@ -359,16 +362,22 @@ class MainWindow(QMainWindow):
                         else:
                             row.append("0")
                     writer.writerow(row)
-            # ... kode save sebelumnya ...
-            QMessageBox.information(self, "Success", f"Data saved to {filename}")
             
+            # Beri info sukses
+            QMessageBox.information(self, "Success", f"Data saved to {filename}")
+
             # --- TAMBAHAN: Auto Open GNUPLOT ---
+            # Pastikan kode ini sejajar (indentasi sama) dengan QMessageBox di atas
             reply = QMessageBox.question(self, "Visualisasi", 
                                        "Buka grafik di GNUPLOT?", 
                                        QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.Yes:
                 self.open_gnuplot(filename)
             # -----------------------------------
+
+        except Exception as e:
+            # INI BAGIAN YANG HILANG SEBELUMNYA
+            QMessageBox.critical(self, "Error", f"Failed to save data: {str(e)}")
     
     def on_clear_plot(self):
         reply = QMessageBox.question(self, "Confirm", "Clear all data and plot?", QMessageBox.Yes | QMessageBox.No)
