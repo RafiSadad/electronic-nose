@@ -64,7 +64,7 @@ python main.py
 
 ### A. Sampling Data
 
-1.  Isi **Sample Name** (contoh: "Kopi Gayo") dan pilih **Jenis Bunga**.
+1.  Isi **Sample Name** (contoh: "Percobaan-1") dan pilih **Jenis Bunga**.
 2.  Klik **Start Sampling**.
 3.  Grafik *real-time* akan muncul, dan motor/pompa pada alat akan bekerja sesuai siklus *Pre-cond, Ramp, Hold, Purge*.
 4.  Klik **Stop** jika proses pengambilan data selesai.
