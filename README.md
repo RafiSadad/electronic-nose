@@ -109,13 +109,3 @@ Aplikasi ini mendukung ekspor data khusus untuk platform Machine Learning **Edge
       * Pastikan IP di kode Arduino (`main.ino`) sama dengan IP Laptop.
 
 <!-- end list -->
-
-```
-
-Di video berikut ini Anda dapat melihat bagaimana cara menghubungkan perangkat kustom ke Edge Impulse menggunakan data forwarding yang konsepnya mirip dengan ekspor CSV/JSON [Data Collection to Edge Impulse](https://www.youtube.com/watch?v=rszoQsMIIAI).
-
-Video ini relevan karena mendemonstrasikan alur kerja pengumpulan data sensor (mirip dengan E-Nose Anda) dan cara mengunggahnya ke Edge Impulse untuk analisis lebih lanjut.
-
-
-http://googleusercontent.com/youtube_content/0
-```
