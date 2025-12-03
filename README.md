@@ -26,13 +26,20 @@ Sistem ini terdiri dari 4 komponen utama yang saling terhubung:
 
 ## 🛠️ Prerequisites (Prasyarat)
 
-Pastikan software berikut sudah terinstall:
+Pastikan software berikut sudah terinstall di komputer kamu:
+
 1.  **Docker Desktop** (Wajib untuk Database)
+    * [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)
+
 2.  **Rust Toolchain** (Untuk Backend)
+    * [Download Rustup (rust-lang.org)](https://www.rust-lang.org/tools/install)
+
 3.  **Python 3.8+** (Untuk Frontend)
+    * [Download Python](https://www.python.org/downloads/)
+    * *⚠️ Penting: Saat install, jangan lupa centang opsi **"Add Python to PATH"**.*
+
 4.  **Gnuplot** (Wajib untuk visualisasi grafik akhir)
     * *Windows:* Download dari [SourceForge](https://sourceforge.net/projects/gnuplot/). Saat install, **WAJIB** centang *"Add to PATH"*.
-
 ---
 
 ## 🚀 Cara Menjalankan (Quick Start)
