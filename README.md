@@ -41,126 +41,157 @@ Pastikan software berikut sudah terinstall sebelum menjalankan program:
 
 ---
 
-## 🚀 Cara Menjalankan (Step-by-Step)
+## ⚙️ Setup & Installation (Satu Kali Saja)
 
-Ikuti urutan ini agar sistem berjalan lancar:
+Ikuti langkah ini saat pertama kali setup proyek di komputer baru.
 
-### Langkah 1: Nyalakan Database (InfluxDB)
-Buka terminal di folder root proyek, lalu jalankan:
+### 1. Setup Database (InfluxDB)
+Buka terminal di folder root proyek:
 ```bash
 docker-compose up -d
 ````
 
-*Tunggu hingga status Docker "Running".*
+*Tunggu hingga status container "Running" di Docker Desktop.*
 
-### Langkah 2: Jalankan Backend Server
+### 2\. Setup Backend (Rust)
 
-Buka terminal baru, masuk ke folder backend:
+```bash
+cd backend
+cargo build
+```
+
+*Tunggu proses download dependencies selesai (bisa memakan waktu beberapa menit).*
+
+### 3\. Setup Frontend (Python Virtual Environment)
+
+Ini adalah langkah krusial agar library Python tidak konflik dengan sistem.
+
+**Windows:**
+
+```bash
+cd frontend
+python -m venv venv           # Membuat virtual environment
+venv\Scripts\activate         # Mengaktifkan venv (Prompt akan berubah jadi (venv))
+pip install -r requirements.txt # Install library yang dibutuhkan
+```
+
+**Linux / Mac:**
+
+```bash
+cd frontend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 4\. Setup Arduino
+
+1.  Buka `embedded/main.ino` dengan Arduino IDE.
+2.  Cari baris `const char* RUST_IP = "..."`
+3.  Ganti dengan IPv4 Laptop Anda (Cek di CMD dengan ketik `ipconfig`).
+4.  Upload ke board Arduino Uno R4 WiFi.
+
+-----
+
+## 🚀 Cara Menjalankan (Setiap Kali Pakai)
+
+Ikuti urutan ini agar sistem berjalan lancar. Gunakan 3 Terminal berbeda.
+
+### Terminal 1: Backend
 
 ```bash
 cd backend
 cargo run
 ```
 
-*Tunggu sampai muncul pesan: `Listening for Arduino on port 8081...`*
+*Tunggu pesan: `Listening for Arduino on port 8081...`*
 
-### Langkah 3: Jalankan Frontend GUI
-
-Buka terminal baru, masuk ke folder frontend:
+### Terminal 2: Frontend
 
 ```bash
 cd frontend
+# Pastikan venv aktif dulu!
+venv\Scripts\activate   # (Windows)
+# source venv/bin/activate # (Mac/Linux)
+
 python main.py
 ```
 
-### Langkah 4: Nyalakan Alat (Arduino)
+### Hardware: Arduino
 
-Hubungkan Arduino ke Power/USB. Pastikan Arduino terhubung ke WiFi yang sama dengan laptop.
-*Lihat Serial Monitor Arduino untuk memastikan koneksi: `Connected to Backend!`*
-
------
-
-## 📊 Cara Monitoring Database (InfluxDB)
-
-Data yang diambil oleh sensor tersimpan secara otomatis di InfluxDB. Berikut cara melihatnya:
-
-1.  **Buka Dashboard:**
-    Buka browser dan akses: [http://localhost:8086](https://www.google.com/search?q=http://localhost:8086)
-
-2.  **Login:**
-    Gunakan kredensial default berikut (sesuai `docker-compose.yml`):
-
-      * **Username:** `admin`
-      * **Password:** `adminpassword`
-
-3.  **Melihat Data Masuk (Data Explorer):**
-
-      * Klik menu **Data Explorer** (ikon grafik di sidebar kiri).
-      * Di bagian **"From"**, pilih bucket: `electronic_nose`.
-      * Di bagian **"Filter"**, klik `_measurement` -\> `sensor_reading`.
-      * Pilih field yang ingin dilihat (misal: `no2`, `eth`, `voc`).
-      * Klik tombol **Submit** di pojok kanan atas.
-      * Grafik data historis akan muncul di layar.
+Hubungkan ke listrik/USB. Pastikan terhubung ke WiFi yang sama.
 
 -----
 
 ## 🎮 Panduan Penggunaan Aplikasi
 
-### 1\. Sampling Data
+### A. Sampling Data
 
-  * Isi **Sample Name** (contoh: "Kopi Gayo").
-  * Pilih **Jenis Sampel**.
-  * Klik tombol **▶ Start**.
-  * Sistem akan menjalankan fase otomatis: *Pre-condition -\> Ramp Up -\> Hold -\> Purge*.
-  * Grafik di layar akan bergerak secara *real-time*.
+1.  Isi **Sample Name** (contoh: "Kopi Gayo").
+2.  Pilih **Jenis Sampel**.
+3.  Klik tombol **▶ Start**.
+4.  Sistem akan menjalankan fase otomatis: *Pre-condition -\> Ramp Up -\> Hold -\> Purge*.
+5.  Grafik di layar akan bergerak secara *real-time*.
 
-### 2\. Menyimpan Data (CSV + Gnuplot)
+### B. Menyimpan & Visualisasi (Output)
 
-Jika sampling selesai, klik tombol **💾 Save Data**.
+Klik tombol **💾 Save Data** setelah sampling selesai.
 
-  * Aplikasi akan menyimpan file `.csv` di folder `frontend/data/`.
-  * Akan muncul *pop-up*: **"Buka grafik di GNUPLOT?"**.
-  * Pilih **Yes** untuk menampilkan grafik respons sinyal berkualitas tinggi (PNG) langsung di dalam aplikasi.
+  * **Output:** File `.csv` tersimpan di folder `frontend/data/`.
+  * **Visualisasi:** Akan muncul pop-up **"Buka grafik di GNUPLOT?"**. Pilih **Yes** untuk melihat grafik kualitas tinggi di dalam aplikasi.
 
-### 3\. Ekspor ke Edge Impulse (Machine Learning)
+### C. Ekspor ke Edge Impulse (AI/ML)
 
-Untuk kebutuhan *training* AI:
+Untuk training Machine Learning:
 
-  * Klik tombol **🚀 Upload to Edge Impulse**.
-  * Aplikasi akan membuat file `.json` khusus format Edge Impulse.
-  * Browser akan otomatis terbuka ke halaman **Edge Impulse Studio**.
-  * Upload file `.json` yang baru dibuat ke sana.
+1.  Klik tombol **🚀 Upload to Edge Impulse**.
+2.  Aplikasi membuat file `.json` (format khusus Edge Impulse).
+3.  Browser otomatis terbuka ke halaman **Edge Impulse Studio**.
+4.  Upload file `.json` tersebut ke sana.
+
+-----
+
+## 📊 Monitoring Database (InfluxDB)
+
+Data juga tersimpan permanen di database. Cara cek manual:
+
+1.  Buka Browser: [http://localhost:8086](https://www.google.com/search?q=http://localhost:8086)
+2.  Login:
+      * **User:** `admin`
+      * **Pass:** `adminpassword`
+3.  Masuk menu **Data Explorer** (icon grafik).
+4.  Pilih Bucket `electronic_nose` -\> Measurement `sensor_reading`.
+5.  Klik **Submit** untuk melihat grafik historis semua sensor.
 
 -----
 
 ## ❓ Troubleshooting
 
-**Masalah: InfluxDB Error / Gagal Login**
+**1. Error: "ModuleNotFoundError" saat jalankan python main.py**
 
-  * Jika login gagal atau bucket tidak ditemukan, kemungkinan setup awal Docker belum sempurna.
-  * **Solusi:** Reset database dengan perintah:
+  * **Penyebab:** Virtual environment belum aktif.
+  * **Solusi:** Jalankan `venv\Scripts\activate` dulu sebelum run python.
+
+**2. Error: "gnuplot not found"**
+
+  * **Penyebab:** Gnuplot belum install atau belum masuk PATH.
+  * **Solusi:** Install ulang Gnuplot, pastikan centang "Add to PATH". Restart terminal.
+
+**3. InfluxDB Gagal Login / Error 401**
+
+  * **Penyebab:** Setup awal Docker korup.
+  * **Solusi:** Reset total database dengan perintah:
     ```bash
     docker-compose down -v
     docker-compose up -d
     ```
 
-**Masalah: Grafik Gnuplot Tidak Muncul**
+**4. Grafik Real-time Diam**
 
-  * Pastikan Gnuplot sudah terinstall.
-  * Cek apakah perintah `gnuplot --version` bisa jalan di terminal. Jika tidak, install ulang Gnuplot dan pastikan centang **"Add to PATH"**.
-     * Pastikan Gnuplot sudah diinstall dan opsi *"Add to PATH"* dicentang. Coba restart VS Code/Terminal.
-     * 
-**Masalah: Arduino Tidak Konek**
-
-  * Pastikan IP Address laptop sudah benar dimasukkan ke file `main.ino`.
-  * Matikan Firewall Windows sementara jika koneksi backend terblokir.
-
-
-  * **Browser tidak terbuka saat klik Edge Impulse:**
-      * Cek koneksi internet. File JSON tetap tersimpan di folder `data/`, Anda bisa upload manual ke [studio.edgeimpulse.com](https://studio.edgeimpulse.com).
-      
-  * **Grafik Real-time diam:**
-      * Cek apakah Arduino terhubung ke WiFi (lihat Serial Monitor Arduino).
-      * Pastikan IP di kode Arduino (`main.ino`) sama dengan IP Laptop.
+  * **Penyebab:** Arduino tidak kirim data.
+  * **Solusi:** Cek Serial Monitor Arduino. Pastikan muncul "Connected to Backend". Cek apakah IP Laptop berubah (kalau pindah WiFi, IP sering ganti). Update IP di `main.ino`.
 
 <!-- end list -->
+
+```
+```
