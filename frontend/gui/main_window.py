@@ -1,5 +1,6 @@
 """Main application window"""
-
+import subprocess
+import sys
 import serial
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -358,9 +359,16 @@ class MainWindow(QMainWindow):
                         else:
                             row.append("0")
                     writer.writerow(row)
+            # ... kode save sebelumnya ...
             QMessageBox.information(self, "Success", f"Data saved to {filename}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save data: {str(e)}")
+            
+            # --- TAMBAHAN: Auto Open GNUPLOT ---
+            reply = QMessageBox.question(self, "Visualisasi", 
+                                       "Buka grafik di GNUPLOT?", 
+                                       QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.open_gnuplot(filename)
+            # -----------------------------------
     
     def on_clear_plot(self):
         reply = QMessageBox.question(self, "Confirm", "Clear all data and plot?", QMessageBox.Yes | QMessageBox.No)
@@ -390,3 +398,25 @@ class MainWindow(QMainWindow):
         if self.serial_connection:
             self.serial_connection.close()
         event.accept()
+
+    def open_gnuplot(self, filename):
+        """Membuka GNUPLOT untuk memvisualisasikan file CSV"""
+        try:
+            # Sesuaikan path script plt Anda
+            # Asumsi: script ada di folder root project, satu level di atas folder frontend
+            script_path = str(Path(__file__).parent.parent.parent / "plot_config.plt")
+            
+            # Jika dijalankan dari folder frontend
+            if not Path(script_path).exists():
+                 # Coba cari di folder saat ini jika script ditaruh di dalam frontend
+                 script_path = "plot_config.plt"
+
+            # Command untuk menjalankan gnuplot
+            # -c artinya pass argument ke script
+            cmd = ["gnuplot", "-c", script_path, filename]
+            
+            subprocess.Popen(cmd, shell=True)
+            self.statusBar().showMessage(f"Opening GNUPLOT for {filename}...")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "GNUPLOT Error", f"Gagal membuka GNUPLOT:\n{str(e)}")
