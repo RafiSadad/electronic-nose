@@ -139,7 +139,7 @@ class ControlPanel(QGroupBox):
         layout.addWidget(self.sample_type)
         
         # Label Info Mode Otomatis
-        mode_label = QLabel("Mode: <b>Auto FSM (Zizu)</b>")
+        mode_label = QLabel("Mode: <b>Auto 30 min (FSM)</b>")
         mode_label.setStyleSheet("color: #FF69B4; background: #FFF0F5; padding: 5px; border-radius: 5px;")
         layout.addWidget(mode_label)
         

@@ -345,7 +345,7 @@ class MainWindow(QMainWindow):
                 writer.writerow(["Sample Name", sample_info['name']])
                 writer.writerow(["Sample Type", sample_info['type']])
                 writer.writerow(["Export Date", datetime.now().isoformat()])
-                writer.writerow(["Mode", "Auto FSM (Zizu)"])
+                writer.writerow(["Mode", "Auto 30 Min (FSM)"])
                 writer.writerow(["Number of Points", len(self.sampling_times)])
                 writer.writerow([])
                 headers = ["Time (s)"] + [SENSOR_NAMES[i] for i in range(NUM_SENSORS)]
