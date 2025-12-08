@@ -1,28 +1,33 @@
-"""Application entry point"""
-
 import sys
-from pathlib import Path
-
+import os
 from PySide6.QtWidgets import QApplication
 from gui.main_window import MainWindow
 
+# Konfigurasi High DPI (Agar tidak buram di layar resolusi tinggi)
+if hasattr(sys, 'frozen'):
+    os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '0'
+else:
+    os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
 
 def main():
-    """Main function"""
-    
-    # Create data folder if not exists
-    Path("data").mkdir(exist_ok=True)
-    
-    # Create application
+    """Entry point aplikasi"""
     app = QApplication(sys.argv)
     
-    # Create and show main window
+    # Set Metadata Aplikasi
+    app.setApplicationName("E-Nose Bridge Control")
+    app.setOrganizationName("Kelompok 6 SPS")
+    
+    # Styling Global (Opsional, jika ingin font default)
+    font = app.font()
+    font.setFamily("Segoe UI")
+    font.setPointSize(10)
+    app.setFont(font)
+
+    # Load Main Window
     window = MainWindow()
     window.show()
-    
-    # Execute application
-    sys.exit(app.exec())
 
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
