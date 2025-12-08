@@ -1,4 +1,4 @@
-// ARDUINO E-NOSE — FINAL + KIRIM currentLevel (UNO R4 WiFi)
+// ARDUINO E-NOSE — FINAL FIX (IP UPDATED)
 // Library: "Multichannel Gas Sensor" by Seeed Studio
 
 #include <WiFiS3.h>
@@ -6,10 +6,13 @@
 #include "Multichannel_Gas_GMXXX.h"
 
 // ==================== WIFI ====================
-const char* ssid = "ayuu";
-const char* pass = "04062006";
-const char* RUST_IP = "172.18.208.1";   // GANTI DENGAN IP PC KAMU!
+const char* ssid = "ayuu";       // Pastikan ini nama Hotspot/WiFi Anda
+const char* pass = "04062006";   // Pastikan password benar
+
+// IP HASIL IPCONFIG ANDA (Wireless LAN adapter Wi-Fi)
+const char* RUST_IP = "10.137.73.15"; 
 const int   RUST_PORT = 8081;
+
 WiFiClient client;
 
 // ==================== SENSOR ====================
@@ -37,7 +40,7 @@ const unsigned long T_PURGE    = 240000;
 const unsigned long T_RECOVERY = 10000;
 unsigned long lastSend = 0;
 
-// ==================== MOTOR ====================
+// ==================== MOTOR HELPER ====================
 void motorA(int speed, bool reverse = false) {
   digitalWrite(DIR_A1, reverse ? LOW : HIGH);
   digitalWrite(DIR_A2, reverse ? HIGH : LOW);
@@ -48,7 +51,10 @@ void motorB(int speed, bool reverse = false) {
   digitalWrite(DIR_B2, reverse ? HIGH : LOW);
   analogWrite(PWM_B, speed);
 }
-void stopMotors() { analogWrite(PWM_A, 0); analogWrite(PWM_B, 0); }
+void stopMotors() { 
+  analogWrite(PWM_A, 0); 
+  analogWrite(PWM_B, 0);
+}
 void rampTo(int target) {
   static int cur = 0;
   if (cur < target) cur += 10;
@@ -59,6 +65,8 @@ void rampTo(int target) {
 // ==================== SETUP ====================
 void setup() {
   Serial.begin(9600);
+  
+  // Setup Pins
   pinMode(DIR_A1, OUTPUT); pinMode(DIR_A2, OUTPUT); pinMode(PWM_A, OUTPUT);
   pinMode(DIR_B1, OUTPUT); pinMode(DIR_B2, OUTPUT); pinMode(PWM_B, OUTPUT);
   stopMotors();
@@ -66,52 +74,116 @@ void setup() {
   Wire.begin();
   gas.begin(Wire, 0x08);
 
-  while (WiFi.begin(ssid, pass) != WL_CONNECTED) { Serial.print("."); delay(500); }
-  Serial.println("\nWiFi Connected! IP: " + WiFi.localIP().toString());
-  Serial.println("E-NOSE READY – Tunggu START_SAMPLING");
+  // LOOP BLOCKING SAMPAI WIFI KONEK
+  Serial.println("STATUS: Connecting WiFi...");
+  
+  // Timeout check agar tidak stuck selamanya jika WiFi salah
+  unsigned long startAttempt = millis();
+  while (WiFi.begin(ssid, pass) != WL_CONNECTED) { 
+    Serial.print("."); 
+    delay(500); 
+    // Jika lebih dari 20 detik gagal, print error (opsional)
+    if (millis() - startAttempt > 20000) {
+        Serial.println("\nGAGAL KONEK WIFI. Cek SSID/Pass!");
+        startAttempt = millis(); // Reset timer
+    }
+  }
+  
+  Serial.println("\nSTATUS: WiFi Connected!");
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+
+  // TANDA SIAP UNTUK PYTHON
+  Serial.println("READY"); 
 }
 
 // ==================== LOOP ====================
 void loop() {
-  if (Serial.available()) {
-    String cmd = Serial.readStringUntil('\n'); cmd.trim();
+  // 1. Prioritas Baca Serial (Cek terus menerus)
+  if (Serial.available() > 0) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim(); 
+    
+    // Debugging feedback
+    Serial.print("DEBUG: Recv -> "); 
+    Serial.println(cmd);
+
     if (cmd == "START_SAMPLING") startSampling();
     else if (cmd == "STOP_SAMPLING") stopSampling();
   }
 
-  if (millis() - lastSend >= 250) { lastSend = millis(); sendSensorData(); }
+  // 2. Kirim Data (Non-blocking timer)
+  if (millis() - lastSend >= 250) { 
+    lastSend = millis(); 
+    sendSensorData(); 
+  }
+  
+  // 3. Jalankan FSM
   if (samplingActive) runFSM();
 }
 
-// ==================== FSM ====================
-void startSampling() { if (!samplingActive) { samplingActive = true; currentLevel = 0; changeState(PRE_COND); } }
-void stopSampling() { samplingActive = false; changeState(IDLE); stopMotors(); }
+// ==================== FSM LOGIC ====================
+void startSampling() { 
+  if (!samplingActive) { 
+    samplingActive = true; 
+    currentLevel = 0; 
+    changeState(PRE_COND);
+  } 
+}
+
+void stopSampling() { 
+  samplingActive = false; 
+  changeState(IDLE); 
+  stopMotors(); 
+}
 
 void changeState(State s) {
-  currentState = s; stateTime = millis();
+  currentState = s; 
+  stateTime = millis();
   String n[] = {"IDLE","PRE-COND","RAMP_UP","HOLD","PURGE","RECOVERY","DONE"};
-  Serial.println("FSM → " + n[s] + " | Level " + String(currentLevel+1));
+  Serial.println("FSM -> " + n[s] + " | Level " + String(currentLevel+1));
 }
 
 void runFSM() {
   unsigned long e = millis() - stateTime;
   switch (currentState) {
-    case PRE_COND:  motorA(100); motorB(0); if (e >= T_PRECOND) changeState(RAMP_UP); break;
-    case RAMP_UP:   rampTo(speeds[currentLevel]); if (e >= T_RAMP) changeState(HOLD); break;
-    case HOLD:      motorA(speeds[currentLevel]); motorB(0); if (e >= T_HOLD) changeState(PURGE); break;
-    case PURGE:     motorA(255, true); motorB(255); if (e >= T_PURGE) changeState(RECOVERY); break;
-    case RECOVERY:  stopMotors();
+    case PRE_COND:  
+      motorA(100); motorB(0); 
+      if (e >= T_PRECOND) changeState(RAMP_UP); 
+      break;
+    case RAMP_UP:   
+      rampTo(speeds[currentLevel]); 
+      if (e >= T_RAMP) changeState(HOLD); 
+      break;
+    case HOLD:      
+      motorA(speeds[currentLevel]); motorB(0);
+      if (e >= T_HOLD) changeState(PURGE); 
+      break;
+    case PURGE:     
+      motorA(255, true); motorB(255); 
+      if (e >= T_PURGE) changeState(RECOVERY);
+      break;
+    case RECOVERY:  
+      stopMotors();
       if (e >= T_RECOVERY) {
         currentLevel++;
-        if (currentLevel >= 5) { changeState(DONE); samplingActive = false; Serial.println("5 LEVEL SELESAI!"); }
-        else changeState(RAMP_UP);
+        if (currentLevel >= 5) { 
+          changeState(DONE); 
+          samplingActive = false; 
+          Serial.println("5 LEVEL SELESAI!");
+        } else {
+          changeState(RAMP_UP);
+        }
       }
       break;
-    case IDLE: case DONE: stopMotors(); break;
+    case IDLE: 
+    case DONE: 
+      stopMotors(); 
+      break;
   }
 }
 
-// ==================== KIRIM DATA (TAMBAHAN currentLevel!) ====================
+// ==================== KIRIM DATA ====================
 void sendSensorData() {
   uint32_t rno2 = gas.measure_NO2();
   uint32_t reth = gas.measure_C2H5OH();
@@ -122,7 +194,7 @@ void sendSensorData() {
   float eth = (reth < 30000) ? reth/1000.0 : -1.0;
   float voc = (rvoc < 30000) ? rvoc/1000.0 : -1.0;
   float co  = (rco  < 30000) ? rco /1000.0 : -1.0;
-
+  
   float raw = analogRead(MICS_PIN) * (5.0/1023.0);
   float Rs = (raw > 0.1) ? 820.0*(5.0-raw)/raw : 100000;
   float ratio = Rs / R0_mics;
@@ -133,8 +205,9 @@ void sendSensorData() {
   String data = "SENSOR:";
   data += String(no2,3) + "," + String(eth,3) + "," + String(voc,3) + "," + String(co,3) + ",";
   data += String(co_mics,3) + "," + String(eth_mics,3) + "," + String(voc_mics,3) + ",";
-  data += String(currentState) + "," + String(currentLevel);  // <--- INI YANG BARU!
+  data += String(currentState) + "," + String(currentLevel);
 
+  // Kirim TCP ke Rust
   if (client.connect(RUST_IP, RUST_PORT)) {
     client.print(data + "\n");
     client.stop();

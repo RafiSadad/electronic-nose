@@ -1,6 +1,7 @@
-"""Main application window"""
+"""Main application window - DYNAMIC BRIDGE MODE (FULL FEATURES)"""
 
-import serial
+import socket
+import json
 import subprocess
 import webbrowser
 import os
@@ -26,7 +27,11 @@ from config.constants import (
     UPDATE_INTERVAL, SENSOR_NAMES, NUM_SENSORS
 )
 
-# Mapping state dari Arduino
+# KONFIGURASI PORT BACKEND
+CMD_PORT = 8082   # Untuk kirim perintah (CONNECT/START/STOP) ke Rust
+DATA_PORT = 8083  # Untuk terima streaming data dari Rust
+
+# Mapping state
 STATE_NAMES = {
     0: "IDLE", 1: "PRE-COND", 2: "RAMP_UP", 3: "HOLD",
     4: "PURGE", 5: "RECOVERY", 6: "DONE"
@@ -42,10 +47,7 @@ class MainWindow(QMainWindow):
         self.is_sampling = False
         self.sampling_data = {i: [] for i in range(NUM_SENSORS)}
         self.sampling_times = []
-        
-        # Workers
         self.network_worker = None
-        self.serial_connection = None 
         
         # Setup UI
         self.setWindowTitle(APP_NAME)
@@ -98,7 +100,7 @@ class MainWindow(QMainWindow):
         tab2.setLayout(tab2_layout)
         self.tabs.addTab(tab2, "⚙️ Control Panel")
         
-        # --- TAB 3: Data Library (Fitur Baru) ---
+        # --- TAB 3: Data Library ---
         self.library_tab = QWidget()
         lib_layout = QVBoxLayout()
         
@@ -124,13 +126,12 @@ class MainWindow(QMainWindow):
         # 4 Kolom: Preview, Filename, Last Modified, Size
         self.lib_table = QTableWidget(0, 4)
         self.lib_table.setHorizontalHeaderLabels(["Preview", "Filename", "Last Modified", "Size"])
-        self.lib_table.setIconSize(QSize(160, 90)) # Ukuran Thumbnail
+        self.lib_table.setIconSize(QSize(160, 90)) 
         
-        # Konfigurasi Header
         header = self.lib_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Fixed)       # Kolom Preview Tetap
-        self.lib_table.setColumnWidth(0, 180)                   # Lebar kolom preview
-        header.setSectionResizeMode(1, QHeaderView.Stretch)     # Filename lebar
+        header.setSectionResizeMode(0, QHeaderView.Fixed)       
+        self.lib_table.setColumnWidth(0, 180)                  
+        header.setSectionResizeMode(1, QHeaderView.Stretch)     
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents) 
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         
@@ -199,15 +200,7 @@ class MainWindow(QMainWindow):
         self.statusBar().setStyleSheet("background-color: #e8e8e8; color: #333;")
         
         self.update_interval = UPDATE_INTERVAL
-        
-        # Load library awal
         self.refresh_library()
-
-        # --- TAMBAHAN BARU: Timer untuk Intip Serial Arduino ---
-        self.serial_timer = QTimer()
-        self.serial_timer.timeout.connect(self.read_serial_debug)
-        self.serial_timer.start(100) # Cek setiap 100ms
-        # -------------------------------------------------------
 
     def populate_info_table(self):
         info = {
@@ -223,60 +216,67 @@ class MainWindow(QMainWindow):
             sensor_name = SENSOR_NAMES[row] if row < len(SENSOR_NAMES) else f"Sensor {row+1}"
             self.stats_table.setItem(row, 0, QTableWidgetItem(sensor_name))
     
+    # ================= LOGIKA KONEKSI BARU (BRIDGE) =================
     def on_connect(self):
+        """
+        1. Koneksi TCP ke Rust (Data Stream 8083)
+        2. Kirim Command ke Rust (8082) untuk buka Serial Port yang dipilih
+        """
         settings = self.connection_panel.get_connection_settings()
-        
-        # 1. SETUP NETWORK (Untuk Data)
+        host = settings['host']
+        serial_port_name = settings['serial_port'] # Nama port dari UI (misal 'COM3')
+
         if self.network_worker:
             self.network_worker.stop()
             self.network_worker.wait()
             self.network_worker = None
 
-        self.statusBar().showMessage(f"Connecting to {settings['host']}...")
+        self.statusBar().showMessage(f"Connecting to Backend Bridge...")
         self.connection_panel.set_status("Connecting...", STATUS_COLORS['sampling'])
         self.connection_panel.connect_btn.setEnabled(False)
         
-        self.network_worker = NetworkWorker(host=settings['host'], port=settings['port'])
+        # 1. Start Network Worker (Dengar Data di 8083)
+        self.network_worker = NetworkWorker(host=host, port=DATA_PORT)
         self.network_worker.data_received.connect(self.on_data_received)
         self.network_worker.connection_status.connect(self.on_connection_status)
         self.network_worker.error_occurred.connect(self.handle_network_error)
         self.network_worker.start()
 
-        # 2. SETUP SERIAL (Untuk Kontrol)
-        # Ini WAJIB ada agar perintah START_SAMPLING terkirim lewat USB
-        if self.serial_connection and self.serial_connection.is_open:
-            self.serial_connection.close()
-        
-        if settings['serial_port'] != "No Ports":
-            try:
-                self.serial_connection = serial.Serial(settings['serial_port'], settings['baud_rate'], timeout=1)
-                print(f"✅ Serial Connected: {settings['serial_port']}")
-                self.serial_connection.dtr = False
-                self.serial_connection.rts = False
-            except Exception as e:
-                # Tampilkan pesan error jika COM Port gagal dibuka (misal dipakai Arduino IDE)
-                QMessageBox.warning(self, "Serial Error", f"Gagal buka port {settings['serial_port']}!\n\nPastikan Serial Monitor di Arduino IDE sudah DITUTUP.\n\nError: {e}")
+        # 2. Kirim Perintah ke Rust untuk buka Serial (Port 8082)
+        if serial_port_name and serial_port_name != "No Ports":
+            # Kirim: "CONNECT_SERIAL COM3"
+            if self.send_tcp_command(f"CONNECT_SERIAL {serial_port_name}"):
+                print(f"✅ Request sent to Rust: Connect to {serial_port_name}")
+            else:
+                QMessageBox.warning(self, "Error", "Gagal menghubungi Backend (Rust) di port 8082!")
         else:
-            QMessageBox.warning(self, "Warning", "No Serial Port selected!")
+            QMessageBox.warning(self, "Warning", "Pilih Serial Port di dropdown dulu!")
+
+    def send_tcp_command(self, command_str):
+        """Helper untuk kirim command ke Rust (Port 8082)"""
+        settings = self.connection_panel.get_connection_settings()
+        host = settings['host']
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(2)
+                s.connect((host, CMD_PORT))
+                s.sendall(f"{command_str}\n".encode())
+                print(f"Sent TCP Command: {command_str}")
+                return True
+        except Exception as e:
+            print(f"TCP CMD Error: {e}")
+            return False
 
     def handle_network_error(self, msg: str):
         self.statusBar().showMessage(msg)
 
     def on_connection_status(self, connected: bool):
         if connected:
-            self.connection_panel.set_status("Hybrid Connected", STATUS_COLORS['connected'])
-            self.statusBar().showMessage("Connected: Data (WiFi) Ready. Waiting for Serial...")
+            self.connection_panel.set_status("Bridge Connected", STATUS_COLORS['connected'])
+            self.statusBar().showMessage("Connected to Backend Bridge. Ready to Start.")
             self.connection_panel.connect_btn.setText("Connected")
             self.connection_panel.connect_btn.setEnabled(False)
-            
-            # --- PERBAIKAN LOGIC ---
-            # Hanya aktifkan Start jika Serial juga sudah terhubung
-            if self.serial_connection and self.serial_connection.is_open:
-                 self.control_panel.enable_start(True)
-                 self.statusBar().showMessage("SYSTEM READY: WiFi (Data) + Serial (Control)")
-            else:
-                 self.statusBar().showMessage("WARNING: WiFi Connected but Serial MISSING (Cannot Control)")
-            # -----------------------
+            self.control_panel.enable_start(True)
         else:
             self.connection_panel.set_status("Disconnected", STATUS_COLORS['disconnected'])
             self.control_panel.enable_start(False)
@@ -285,12 +285,8 @@ class MainWindow(QMainWindow):
             self.connection_panel.connect_btn.setEnabled(True)
 
     def on_start_sampling(self):
-        # 1. Validasi Input UI
+        # 1. Validasi UI
         sample_info = self.control_panel.get_sample_info()
-        if not self.serial_connection or not self.serial_connection.is_open:
-            QMessageBox.critical(self, "Error", "Serial connection lost! Cannot start sampling.")
-            return
-        
         self.info_table.setItem(0, 1, QTableWidgetItem(sample_info['name']))
         self.info_table.setItem(1, 1, QTableWidgetItem(sample_info['type']))
         
@@ -298,43 +294,21 @@ class MainWindow(QMainWindow):
         self.sampling_times = []
         self.plot_widget.clear_data()
         
-        self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
-        try:
-            # Kirim perintah
-            self.serial_connection.write(b"START_SAMPLING\n")
-            self.serial_connection.flush() # --- PENTING: Paksa kirim buffer ---
-            print("Sent: START_SAMPLING")  # Debugging
+        # 2. Kirim Start ke Rust (TCP)
+        if self.send_tcp_command("START_SAMPLING"):
+            self.is_sampling = True
+            self.start_time = 0
             
-            self.statusBar().showMessage("Command Sent. Waiting for Arduino response...")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Serial Error", f"Failed to send command: {e}")
-            self.on_stop_sampling() # Reset UI jika gagal
-        
-        self.is_sampling = True
-        self.start_time = 0
-        
-        self.control_panel.enable_start(False)
-        self.control_panel.enable_stop(True)
-        
-        
-        # 2. KIRIM COMMAND VIA SERIAL (UTAMA)
-        # Ini logic "lama" yang terbukti jalan untuk menggerakkan hardware
-        if self.serial_connection and self.serial_connection.is_open:
-            try:
-                # Kirim string "START_SAMPLING\n" ke Arduino via USB
-                self.serial_connection.write(b"START_SAMPLING\n")
-                self.statusBar().showMessage("Sampling Started via Serial")
-            except Exception as e:
-                QMessageBox.critical(self, "Serial Error", f"Failed to send command: {e}")
+            self.control_panel.enable_start(False)
+            self.control_panel.enable_stop(True)
+            self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
+            self.statusBar().showMessage("Sampling Started via Bridge")
         else:
-            # Jika Serial putus/lupa connect, kasih peringatan
-            QMessageBox.warning(self, "Warning", "Serial Port not connected! Hardware mungkin tidak merespon.")
-        
-        self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
+            QMessageBox.critical(self, "Error", "Gagal mengirim perintah Start ke Backend!")
     
     def on_data_received(self, data: dict):
         try:
+            # Data dari NetworkWorker sudah dict (asumsi json parsing di worker)
             sensor_values = [
                 float(data.get('no2', 0.0)), float(data.get('eth', 0.0)), 
                 float(data.get('voc', 0.0)), float(data.get('co', 0.0)),
@@ -342,10 +316,11 @@ class MainWindow(QMainWindow):
                 float(data.get('voc_mics', 0.0))
             ]
             state_idx = int(data.get('state', 0))
-            state_name = STATE_NAMES.get(state_idx, "UNKNOWN")
+            # Gunakan state_name dari backend jika ada, atau fallback ke local map
+            state_name = data.get('state_name', STATE_NAMES.get(state_idx, "UNKNOWN"))
             level = data.get('level', 0)
             
-            self.statusBar().showMessage(f"System State: {state_name} | Level: {level}")
+            self.statusBar().showMessage(f"State: {state_name} | Level: {level}")
             
             if self.is_sampling:
                 if not self.sampling_times:
@@ -369,19 +344,14 @@ class MainWindow(QMainWindow):
 
     def on_stop_sampling(self):
         self.is_sampling = False
-        
-        # KIRIM STOP VIA SERIAL
-        if self.serial_connection and self.serial_connection.is_open:
-            try:
-                self.serial_connection.write(b"STOP_SAMPLING\n")
-            except: pass
+        self.send_tcp_command("STOP_SAMPLING")
         
         self.control_panel.enable_start(True)
         self.control_panel.enable_stop(False)
-        self.connection_panel.set_status("Hybrid Connected", STATUS_COLORS['connected'])
+        self.connection_panel.set_status("Bridge Connected", STATUS_COLORS['connected'])
         self.statusBar().showMessage(f"Stopped. Collected {len(self.sampling_times)} points.")
     
-    # --- FITUR SAVE & UPLOAD ---
+    # --- FITUR SAVE & UPLOAD (TIDAK BERUBAH) ---
     def on_save_data(self):
         if not self.sampling_times:
             QMessageBox.warning(self, "Warning", "No data to save!")
@@ -587,29 +557,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.network_worker: self.network_worker.stop()
-        if self.serial_connection: self.serial_connection.close()
+        # Opsional: Kirim command disconnect ke Rust saat tutup aplikasi
+        self.send_tcp_command("DISCONNECT_SERIAL") 
         event.accept()
-
-    # --- TAMBAHAN BARU: Fungsi untuk Membaca Output Serial Arduino ---
-    def read_serial_debug(self):
-        """Membaca pesan debug dari Arduino (seperti 'Connecting...', 'READY')"""
-        if self.serial_connection and self.serial_connection.is_open:
-            try:
-                # Cek apakah ada data yang menunggu dibaca
-                if self.serial_connection.in_waiting > 0:
-                    # Baca baris, decode, dan bersihkan whitespace
-                    raw_line = self.serial_connection.readline()
-                    line = raw_line.decode('utf-8', errors='ignore').strip()
-                    
-                    if line:
-                        print(f"🤖 [ARDUINO SAYS]: {line}") # Tampilkan di Terminal Python
-                        
-                        # Update status bar jika Arduino sudah siap
-                        if "READY" in line:
-                            self.statusBar().showMessage(f"✅ ARDUINO SIAP! ({line})")
-                        elif "WiFi Connected" in line:
-                            self.statusBar().showMessage("✅ WiFi Terhubung!")
-                        elif line == ".":
-                            self.statusBar().showMessage("⏳ Arduino sedang menyambungkan WiFi...")
-            except Exception as e:
-                print(f"Serial Read Error: {e}")
