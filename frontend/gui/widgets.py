@@ -1,6 +1,6 @@
-"""Custom widgets for the application (Floral Theme Compatible 🌸)"""
+"""Custom widgets for the application (Floral Theme Compatible 🌸) - FIXED"""
 
-import serial.tools.list_ports # AMAN: Hanya untuk listing, bukan koneksi
+import serial.tools.list_ports
 import pyqtgraph as pg
 import numpy as np
 
@@ -55,11 +55,11 @@ class StatusIndicator(QFrame):
         self.dot.set_color(QColor(color_hex))
 
 class SensorPlot(pg.PlotWidget):
-    """Widget Grafik"""
+    """Widget Grafik dengan Buffer Data Internal"""
     def __init__(self, title: str = "Sensor Data", parent=None):
         super().__init__(parent)
         self.setTitle(title, color='#5D4037', size='12pt')
-        self.setBackground('w') # Background putih agar clean
+        self.setBackground('w') # Background putih
         self.showGrid(x=True, y=True, alpha=0.3)
         
         # Style Axis
@@ -68,29 +68,45 @@ class SensorPlot(pg.PlotWidget):
         self.setLabel('bottom', 'Time (s)', **styles)
         
         self.num_sensors = NUM_SENSORS
+        self.max_points = MAX_PLOT_POINTS
+        
+        # --- INTERNAL DATA BUFFER ---
+        self.time_data = np.array([])
+        self.sensor_data = {i: np.array([]) for i in range(self.num_sensors)}
+        
         self.plot_lines = {}
         self.addLegend()
         
         for i in range(self.num_sensors):
             color = PLOT_COLORS[i % len(PLOT_COLORS)]
             pen = pg.mkPen(color=color, width=3)
-            name = SENSOR_NAMES[i]
+            name = SENSOR_NAMES[i] if i < len(SENSOR_NAMES) else f"S{i+1}"
             self.plot_lines[i] = self.plot([], [], pen=pen, name=name)
     
-    def update_plot(self, time_val, sensor_vals):
-        # Implementasi update sederhana (bisa dioptimasi dengan deque)
-        # Di sini kita asumsikan MainWindow mengatur data buffer
-        pass 
-        # (MainWindow memanggil setData langsung ke plot_lines biasanya, 
-        # tapi di struktur sebelumnya MainWindow mengelola data arrays.
-        # Fungsi ini placeholder jika ingin logic plot ada di sini)
-
-    def add_data_point(self, time_arr, data_dict):
+    def add_data_point(self, time_val: float, sensor_vals: list):
+        """Menerima satu titik data, menambahkannya ke buffer, lalu update plot"""
+        # 1. Append Data Baru
+        self.time_data = np.append(self.time_data, time_val)
+        
         for i in range(self.num_sensors):
-            self.plot_lines[i].setData(time_arr, data_dict[i])
+            val = sensor_vals[i] if i < len(sensor_vals) else 0.0
+            self.sensor_data[i] = np.append(self.sensor_data[i], val)
+        
+        # 2. Rolling Buffer (Hapus data lama jika melebihi batas)
+        if len(self.time_data) > self.max_points:
+            self.time_data = self.time_data[-self.max_points:]
+            for i in range(self.num_sensors):
+                self.sensor_data[i] = self.sensor_data[i][-self.max_points:]
+
+        # 3. Update Grafik
+        for i in range(self.num_sensors):
+            self.plot_lines[i].setData(self.time_data, self.sensor_data[i])
     
     def clear_data(self):
+        """Reset grafik"""
+        self.time_data = np.array([])
         for i in range(self.num_sensors):
+            self.sensor_data[i] = np.array([])
             self.plot_lines[i].setData([], [])
 
 class ControlPanel(QGroupBox):
@@ -190,7 +206,6 @@ class ConnectionPanel(QGroupBox):
         
     def refresh_ports(self):
         self.port_selector.clear()
-        # AMAN: Hanya LISTING ports, tidak OPEN
         try:
             ports = serial.tools.list_ports.comports()
             names = [p.device for p in ports]

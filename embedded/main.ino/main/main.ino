@@ -6,11 +6,11 @@
 #include "Multichannel_Gas_GMXXX.h"
 
 // ==================== WIFI ====================
-const char* ssid = "ayuu";       // Pastikan ini nama Hotspot/WiFi Anda
-const char* pass = "04062006";   // Pastikan password benar
+const char* ssid = "Sadad’s phone";       // Pastikan ini nama Hotspot/WiFi Anda
+const char* pass = "uhuyuhuy";   // Pastikan password benar
 
 // IP HASIL IPCONFIG ANDA (Wireless LAN adapter Wi-Fi)
-const char* RUST_IP = "10.137.73.15"; 
+const char* RUST_IP = "172.20.10.10"; 
 const int   RUST_PORT = 8081;
 
 WiFiClient client;
