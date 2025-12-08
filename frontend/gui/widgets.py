@@ -1,18 +1,22 @@
-"""Custom widgets for the application (Cute Layout 🌸)"""
+"""Custom widgets for the application (Bridge Mode Compatible 🌸)"""
+
+import serial.tools.list_ports
+import pyqtgraph as pg
+import numpy as np
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QPushButton, QLineEdit, QComboBox, QSpinBox,
-    QCheckBox, QGroupBox, QFrame, QSizePolicy, 
+    QPushButton, QLineEdit, QComboBox, QCheckBox, QGroupBox, 
+    QFrame, QDialog, QScrollArea, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QColor, QFont, QPainter, QBrush, QPixmap
-from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QScrollArea
+from PySide6.QtGui import QColor, QFont, QPainter, QBrush, QPixmap, QIcon
 
-import pyqtgraph as pg
-import numpy as np
-import serial.tools.list_ports
-from config.constants import SAMPLE_TYPES, PLOT_COLORS, NUM_SENSORS, SENSOR_NAMES, MAX_PLOT_POINTS
+# Import Constants (Pastikan constants.py sudah Anda update sesuai instruksi sebelumnya)
+from config.constants import (
+    SAMPLE_TYPES, PLOT_COLORS, NUM_SENSORS, SENSOR_NAMES, MAX_PLOT_POINTS,
+    DEFAULT_HOST, CMD_PORT, STATUS_COLORS
+)
 
 class StatusIndicator(QFrame):
     """Custom status indicator widget (Cute Dot)"""
@@ -24,10 +28,10 @@ class StatusIndicator(QFrame):
         self.setMinimumWidth(150)
         self.setMinimumHeight(35)
         
-    def set_status(self, status_text: str, color_rgb: tuple):
-        """Update status with text and color"""
+    def set_status(self, status_text: str, color_hex: str):
+        """Update status with text and color hex code"""
         self.status_text = status_text
-        self.status_color = QColor(*color_rgb)
+        self.status_color = QColor(color_hex)
         self.update()
         
     def paintEvent(self, event):
@@ -55,8 +59,6 @@ class SensorPlot(pg.PlotWidget):
         
         self.plot_title = title
         self.num_sensors = NUM_SENSORS
-        
-        # UPDATE: Set ke angka besar (20.000) untuk menampung >30 menit data
         self.max_points = MAX_PLOT_POINTS 
         
         # Setup plot style
@@ -92,12 +94,6 @@ class SensorPlot(pg.PlotWidget):
         # Update data per sensor
         for i, value in enumerate(sensor_values[:self.num_sensors]):
             self.sensor_data[i] = np.append(self.sensor_data[i], value)
-        
-        # UPDATE: Matikan logika scrolling agar data lama TIDAK hilang
-        # if len(self.time_data) > self.max_points:
-        #     self.time_data = self.time_data[-self.max_points:]
-        #     for i in range(self.num_sensors):
-        #         self.sensor_data[i] = self.sensor_data[i][-self.max_points:]
         
         # Update grafik lines
         for i in range(self.num_sensors):
@@ -146,13 +142,11 @@ class ControlPanel(QGroupBox):
         
         # Buttons
         self.start_btn = QPushButton("▶ Start")
-        self.start_btn.setObjectName("startButton")
         self.start_btn.setCursor(Qt.PointingHandCursor)
         self.start_btn.clicked.connect(self.start_clicked.emit)
         layout.addWidget(self.start_btn)
         
         self.stop_btn = QPushButton("⏹ Stop")
-        self.stop_btn.setObjectName("stopButton")
         self.stop_btn.setCursor(Qt.PointingHandCursor)
         self.stop_btn.clicked.connect(self.stop_clicked.emit)
         self.stop_btn.setEnabled(False)
@@ -181,12 +175,12 @@ class ControlPanel(QGroupBox):
 
 
 class ConnectionPanel(QGroupBox):
-    """Connection settings panel (Hybrid) - Cute & Clean"""
+    """Connection settings panel (Bridge Mode) - Updated"""
     
     connect_clicked = Signal()
     
     def __init__(self, parent=None):
-        super().__init__("🔌 Connection Setup", parent)
+        super().__init__("🔌 Bridge Connection Setup", parent)
         self.init_ui()
     
     def init_ui(self):
@@ -195,28 +189,30 @@ class ConnectionPanel(QGroupBox):
         layout.setHorizontalSpacing(15)
         
         # --- Row 1: Backend IP ---
-        layout.addWidget(QLabel("📡 WiFi Data:"), 0, 0)
+        layout.addWidget(QLabel("📡 Backend IP:"), 0, 0)
         
         self.ip_input = QLineEdit()
-        self.ip_input.setText("127.0.0.1")
-        self.ip_input.setPlaceholderText("IP Address")
+        self.ip_input.setText(DEFAULT_HOST)
+        self.ip_input.setPlaceholderText("127.0.0.1")
+        self.ip_input.setToolTip("IP tempat Backend Rust berjalan")
         self.ip_input.setFixedWidth(180)
         layout.addWidget(self.ip_input, 0, 1)
         
-        # --- Row 2: USB Port ---
-        layout.addWidget(QLabel("🔌 USB Control:"), 1, 0)
+        # --- Row 2: Arduino Port (Bridge) ---
+        layout.addWidget(QLabel("🔌 Arduino Port:"), 1, 0)
         
         usb_layout = QHBoxLayout()
         usb_layout.setContentsMargins(0,0,0,0)
         
         self.port_selector = QComboBox()
         self.port_selector.setFixedWidth(130)
-        self.port_selector.addItems(self.get_available_ports())
+        self.port_selector.setToolTip("Port ini akan dibuka oleh Rust, bukan Python")
+        self.refresh_ports() # Auto scan
         usb_layout.addWidget(self.port_selector)
         
         self.refresh_btn = QPushButton("↻")
         self.refresh_btn.setFixedSize(30, 30)
-        self.refresh_btn.setToolTip("Scan Ports")
+        self.refresh_btn.setToolTip("Refresh Serial Ports")
         self.refresh_btn.setCursor(Qt.PointingHandCursor)
         self.refresh_btn.clicked.connect(self.refresh_ports)
         usb_layout.addWidget(self.refresh_btn)
@@ -235,8 +231,8 @@ class ConnectionPanel(QGroupBox):
         
         bottom_container.addStretch()
         
-        # Connect Button (Big & Cute)
-        self.connect_btn = QPushButton("✨ Connect All")
+        # Connect Button
+        self.connect_btn = QPushButton("✨ Connect Bridge")
         self.connect_btn.setFixedWidth(140)
         self.connect_btn.setMinimumHeight(35)
         self.connect_btn.setCursor(Qt.PointingHandCursor)
@@ -249,62 +245,29 @@ class ConnectionPanel(QGroupBox):
     
     def get_available_ports(self) -> list:
         try:
-            ports = [port.device for port in serial.tools.list_ports.comports()]
-            return ports if ports else ["No Ports"]
+            ports = serial.tools.list_ports.comports()
+            # Kembalikan nama device saja (misal: "COM3" atau "/dev/ttyUSB0")
+            port_names = [port.device for port in ports]
+            return port_names if port_names else ["No Ports"]
         except:
-            return ["Error"]
+            return ["Error Scanning"]
             
     def refresh_ports(self):
         self.port_selector.clear()
         self.port_selector.addItems(self.get_available_ports())
     
     def get_connection_settings(self) -> dict:
+        """Mengembalikan setting untuk main_window"""
         return {
-            'host': self.ip_input.text(),
-            'port': 8082, 
+            'host': self.ip_input.text().strip(),
+            'port': CMD_PORT, 
             'serial_port': self.port_selector.currentText(),
             'baud_rate': 9600 
         }
     
-    def set_status(self, status_text: str, color_rgb: tuple):
-        self.status_indicator.set_status(status_text, color_rgb)
+    def set_status(self, status_text: str, color_hex: str):
+        self.status_indicator.set_status(status_text, color_hex)
 
-
-
-class GnuplotWidget(QDialog):
-    """Widget pop-up untuk menampilkan hasil render GNUPLOT"""
-    def __init__(self, image_path, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Visualisasi GNUPLOT")
-        self.resize(1100, 700)
-        
-        layout = QVBoxLayout()
-        
-        # Area Scroll (jaga-jaga kalau gambarnya besar)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        
-        # Label untuk gambar
-        self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignCenter)
-        
-        # Load gambar
-        pixmap = QPixmap(image_path)
-        if not pixmap.isNull():
-            self.image_label.setPixmap(pixmap)
-        else:
-            self.image_label.setText("Gagal memuat gambar GNUPLOT")
-            
-        scroll.setWidget(self.image_label)
-        layout.addWidget(scroll)
-        
-        self.setLayout(layout)
-
-
-# --- TAMBAHAN DI PALING BAWAH FILE ---
-
-from PySide6.QtWidgets import QDialog, QScrollArea
-from PySide6.QtGui import QPixmap
 
 class GnuplotWidget(QDialog):
     """Widget pop-up untuk menampilkan hasil render GNUPLOT"""

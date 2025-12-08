@@ -1,24 +1,18 @@
-"""Application constants and configuration"""
+"""Application constants and configuration - BRIDGE MODE"""
 
 # Application Info
-APP_NAME = "Electronic Nose Visualizer | Kelompok 6 SPS (Multichannel + MiCS)"
-APP_VERSION = "1.2.0" # Updated version
+APP_NAME = "E-Nose Bridge Control | Kelompok 6 SPS"
+APP_VERSION = "2.0.0 (Bridge)"
 WINDOW_WIDTH = 1400
 WINDOW_HEIGHT = 900
 
-# Serial Communication
-DEFAULT_BAUD_RATE = 9600
-SERIAL_TIMEOUT = 1
-SERIAL_BUFFER_SIZE = 1024
+# Network Configuration (PENTING!)
+DEFAULT_HOST = "127.0.0.1" # Ganti ke IP PC jika diakses dari luar
+CMD_PORT = 8082            # Port untuk Kirim Perintah (Start/Stop/Connect)
+DATA_PORT = 8083           # Port untuk Terima Data Sensor
 
 # Data Collection
-# UPDATE: Dinaikkan ke 20.000 untuk support durasi >30 menit tanpa hilang
-MAX_PLOT_POINTS = 20000 
-
-# UPDATE: Diubah ke 250ms agar sinkron dengan Arduino (4Hz)
-# Ini penting agar sumbu waktu di grafik akurat (Real-Time)
-UPDATE_INTERVAL = 250  
-
+UPDATE_INTERVAL = 250      # ms (Sesuai Arduino 4Hz)
 NUM_SENSORS = 7
 
 # Sensor Names (Sesuai main.ino)
@@ -32,27 +26,14 @@ SENSOR_NAMES = [
     "MiCS-VOC (Approximation)"
 ]
 
-# Cute Pastel Colors for plotting 🌸
-PLOT_COLORS = [
-    '#FF9AA2',  # Pastel Red
-    '#B5EAD7',  # Pastel Mint
-    '#C7CEEA',  # Pastel Periwinkle
-    '#FFDAC1',  # Pastel Peach
-    '#E2F0CB',  # Pastel Lime
-    '#FFB7B2',  # Pastel Salmon
-    '#E0BBE4'   # Pastel Lavender
-]
+# Plot Colors
+PLOT_COLORS = ['#FF9AA2', '#B5EAD7', '#C7CEEA', '#FFDAC1', '#E2F0CB', '#FFB7B2', '#E0BBE4']
 
-# Status messages
-STATUS_DISCONNECTED = "Disconnected"
-STATUS_CONNECTED = "Connected"
-STATUS_SAMPLING = "Sampling..."
-STATUS_ERROR = "Error"
+# Status Colors
+STATUS_COLORS = {
+    'connected': "#4CAF50",    # Green
+    'disconnected': "#F44336", # Red
+    'sampling': "#2196F3"      # Blue
+}
 
-# Sample types (Flower Theme 🌺)
-SAMPLE_TYPES = [
-    "Bunga Kenanga",
-    "Bunga Melati",
-    "Bunga Mawar",
-    "Bunga Sedap Malam"
-]
+SAMPLE_TYPES = ["Bunga Kenanga", "Bunga Melati", "Bunga Mawar", "Bunga Sedap Malam"]
