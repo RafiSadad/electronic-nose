@@ -98,7 +98,7 @@ class MainWindow(QMainWindow):
         tab2.setLayout(tab2_layout)
         self.tabs.addTab(tab2, "⚙️ Control Panel")
         
-        # --- TAB 3: Data Library ---
+        # --- TAB 3: Data Library (Fitur Baru) ---
         self.library_tab = QWidget()
         lib_layout = QVBoxLayout()
         
@@ -219,6 +219,8 @@ class MainWindow(QMainWindow):
     
     def on_connect(self):
         settings = self.connection_panel.get_connection_settings()
+        
+        # 1. SETUP NETWORK (Untuk Data)
         if self.network_worker:
             self.network_worker.stop()
             self.network_worker.wait()
@@ -234,6 +236,8 @@ class MainWindow(QMainWindow):
         self.network_worker.error_occurred.connect(self.handle_network_error)
         self.network_worker.start()
 
+        # 2. SETUP SERIAL (Untuk Kontrol)
+        # Ini WAJIB ada agar perintah START_SAMPLING terkirim lewat USB
         if self.serial_connection and self.serial_connection.is_open:
             self.serial_connection.close()
         
@@ -242,9 +246,10 @@ class MainWindow(QMainWindow):
                 self.serial_connection = serial.Serial(settings['serial_port'], settings['baud_rate'], timeout=1)
                 print(f"✅ Serial Connected: {settings['serial_port']}")
             except Exception as e:
-                pass 
+                # Tampilkan pesan error jika COM Port gagal dibuka (misal dipakai Arduino IDE)
+                QMessageBox.warning(self, "Serial Error", f"Gagal buka port {settings['serial_port']}!\n\nPastikan Serial Monitor di Arduino IDE sudah DITUTUP.\n\nError: {e}")
         else:
-            pass 
+            QMessageBox.warning(self, "Warning", "No Serial Port selected!")
 
     def handle_network_error(self, msg: str):
         self.statusBar().showMessage(msg)
@@ -264,7 +269,7 @@ class MainWindow(QMainWindow):
             self.connection_panel.connect_btn.setEnabled(True)
 
     def on_start_sampling(self):
-        # 1. Update UI
+        # 1. Validasi Input UI
         sample_info = self.control_panel.get_sample_info()
         if not sample_info['name']:
             QMessageBox.warning(self, "Warning", "Please enter a sample name!")
@@ -283,16 +288,18 @@ class MainWindow(QMainWindow):
         self.control_panel.enable_start(False)
         self.control_panel.enable_stop(True)
         
-        # 2. SEND COMMAND TO NETWORK (WIFI) -> Ini yang tadi kurang
-        if self.network_worker:
-            self.network_worker.send_command("START_SAMPLING")
-            self.statusBar().showMessage("Sending START to Network...")
-
-        # 3. SEND COMMAND TO SERIAL (BACKUP)
+        # 2. KIRIM COMMAND VIA SERIAL (UTAMA)
+        # Ini logic "lama" yang terbukti jalan untuk menggerakkan hardware
         if self.serial_connection and self.serial_connection.is_open:
             try:
+                # Kirim string "START_SAMPLING\n" ke Arduino via USB
                 self.serial_connection.write(b"START_SAMPLING\n")
-            except: pass
+                self.statusBar().showMessage("Sampling Started via Serial")
+            except Exception as e:
+                QMessageBox.critical(self, "Serial Error", f"Failed to send command: {e}")
+        else:
+            # Jika Serial putus/lupa connect, kasih peringatan
+            QMessageBox.warning(self, "Warning", "Serial Port not connected! Hardware mungkin tidak merespon.")
         
         self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
     
@@ -333,11 +340,7 @@ class MainWindow(QMainWindow):
     def on_stop_sampling(self):
         self.is_sampling = False
         
-        # 1. SEND STOP TO NETWORK
-        if self.network_worker:
-            self.network_worker.send_command("STOP_SAMPLING")
-
-        # 2. SEND STOP TO SERIAL
+        # KIRIM STOP VIA SERIAL
         if self.serial_connection and self.serial_connection.is_open:
             try:
                 self.serial_connection.write(b"STOP_SAMPLING\n")
