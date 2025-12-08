@@ -99,11 +99,12 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.pages)
         
         # --- MENGHUBUNGKAN SIGNAL ANTAR HALAMAN ---
-        # Saat tombol ditekan di ControlPage, MainWindow yang bekerja
+        # Saat tombol ditekan di ControlPage, MainWindow yang merespon
         self.page_control.request_connect.connect(self.on_connect_request)
         self.page_control.request_start.connect(self.on_start_request)
         self.page_control.request_stop.connect(self.on_stop_request)
         self.page_control.request_save.connect(self.on_save_request)
+        self.page_control.request_clear.connect(self.on_clear_request)
         
         # Default Page
         self.sidebar.setCurrentRow(0)
@@ -236,7 +237,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Data Error: {e}")
 
-    # ================= LOGIC SAVE =================
+    # ================= LOGIC SAVE & CLEAR =================
     def on_save_request(self):
         if not self.sampling_times:
             QMessageBox.warning(self, "Warning", "Belum ada data untuk disimpan!")
@@ -258,6 +259,34 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Gagal simpan: {e}")
+
+    def on_clear_request(self):
+        """Menghapus data di memori dan grafik"""
+        if self.is_sampling:
+            QMessageBox.warning(self, "Warning", "Stop sampling dulu sebelum clear!")
+            return
+
+        reply = QMessageBox.question(
+            self, "Konfirmasi", 
+            "Hapus semua data grafik dan statistik?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            # 1. Reset Data Global
+            self.sampling_data = {i: [] for i in range(NUM_SENSORS)}
+            self.sampling_times = []
+            self.start_time = 0.0
+            
+            # 2. Reset Tampilan Halaman
+            self.page_dashboard.clear_plot()
+            self.page_stats.clear_stats()
+            
+            # 3. Reset Info di Control Panel
+            self.page_control.update_info(3, "0")   # Points
+            self.page_control.update_info(4, "0 s") # Time
+            
+            QMessageBox.information(self, "Info", "Data berhasil dihapus.")
 
     def closeEvent(self, event):
         """Cleanup saat aplikasi ditutup"""

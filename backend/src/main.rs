@@ -1,6 +1,6 @@
 // backend/src/main.rs - DYNAMIC BRIDGE MODE (FULL FEATURES)
 use actix_web::{web, App, HttpServer};
-use actix_cors::Cors;
+// use actix_cors::Cors; // Removed unused import
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -82,7 +82,8 @@ fn start_arduino_receiver(state: web::Data<AppState>) {
                                 // A. Broadcast ke GUI (JSON)
                                 if let Ok(json_str) = serde_json::to_string(&data) {
                                     if let Ok(mut clients) = state.gui_broadcast.lock() {
-                                        clients.retain(|tx| tx.send(json_str).is_ok());
+                                        // FIX: Clone json_str inside the closure
+                                        clients.retain(|tx| tx.send(json_str.clone()).is_ok());
                                     }
                                 }
                                 

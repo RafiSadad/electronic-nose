@@ -6,13 +6,14 @@ from gui.widgets import ControlPanel, ConnectionPanel
 class ControlPage(QWidget):
     """
     Halaman 2: Control Panel
-    Berisi setting koneksi Bridge, tombol Start/Stop FSM, dan Info Sampling.
+    Berisi setting koneksi Bridge, tombol Start/Stop/Save/Clear, dan Info Sampling.
     """
     # Signal untuk komunikasi ke MainWindow
     request_connect = Signal()
     request_start = Signal()
     request_stop = Signal()
     request_save = Signal()
+    request_clear = Signal() # Signal untuk tombol Clear
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -25,11 +26,12 @@ class ControlPage(QWidget):
         self.conn_panel.connect_clicked.connect(self.request_connect.emit)
         self.layout.addWidget(self.conn_panel)
         
-        # 2. Control Panel (Start/Stop)
+        # 2. Control Panel (Start/Stop/Save/Clear)
         self.ctrl_panel = ControlPanel()
         self.ctrl_panel.start_clicked.connect(self.request_start.emit)
         self.ctrl_panel.stop_clicked.connect(self.request_stop.emit)
         self.ctrl_panel.save_clicked.connect(self.request_save.emit)
+        self.ctrl_panel.clear_clicked.connect(self.request_clear.emit) # Sambungkan tombol clear
         self.layout.addWidget(self.ctrl_panel)
         
         # 3. Info Table

@@ -2,6 +2,7 @@ import sys
 import os
 from PySide6.QtWidgets import QApplication
 from gui.main_window import MainWindow
+from gui.styles import STYLESHEET
 
 # Konfigurasi High DPI (Agar tidak buram di layar resolusi tinggi)
 if hasattr(sys, 'frozen'):
@@ -17,16 +18,20 @@ def main():
     app.setApplicationName("E-Nose Bridge Control")
     app.setOrganizationName("Kelompok 6 SPS")
     
-    # Styling Global (Opsional, jika ingin font default)
+    # Terapkan Tema Global (Styles)
+    app.setStyleSheet(STYLESHEET)
+    
+    # Font Default Aplikasi
     font = app.font()
     font.setFamily("Segoe UI")
     font.setPointSize(10)
     app.setFont(font)
 
-    # Load Main Window
+    # Load & Show Main Window
     window = MainWindow()
     window.show()
 
+    # Jalankan Event Loop
     sys.exit(app.exec())
 
 if __name__ == "__main__":
