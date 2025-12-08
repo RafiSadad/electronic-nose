@@ -14,10 +14,10 @@ backend/**/*.rs.bk
 backend/Cargo.lock
 
 # Data files (Updated)
-frontend/data/*.csv
-frontend/data/*.json
-frontend/data/*.png
-!frontend/data/.gitkeep
+#frontend/data/*.csv
+#frontend/data/*.json
+#frontend/data/*.png
+#!frontend/data/.gitkeep
 
 # Edge Impulse
 edge-impulse/training-data/*.csv
