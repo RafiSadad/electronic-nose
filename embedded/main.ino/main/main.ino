@@ -6,9 +6,9 @@
 #include "Multichannel_Gas_GMXXX.h"
 
 // ==================== WIFI ====================
-const char* ssid = "Redmi Note 12 Pro";
-const char* pass = "galendio";
-const char* RUST_IP = "10.185.144.238";   // GANTI DENGAN IP PC KAMU!
+const char* ssid = "Sadad's phone";
+const char* pass = "uhuyuhuy";
+const char* RUST_IP = "172.20.10.10";   // GANTI DENGAN IP PC KAMU!
 const int   RUST_PORT = 8081;
 WiFiClient client;
 

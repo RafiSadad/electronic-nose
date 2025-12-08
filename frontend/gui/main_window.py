@@ -203,6 +203,12 @@ class MainWindow(QMainWindow):
         # Load library awal
         self.refresh_library()
 
+        # --- TAMBAHAN BARU: Timer untuk Intip Serial Arduino ---
+        self.serial_timer = QTimer()
+        self.serial_timer.timeout.connect(self.read_serial_debug)
+        self.serial_timer.start(100) # Cek setiap 100ms
+        # -------------------------------------------------------
+
     def populate_info_table(self):
         info = {
             "Sample Name": "None", "Sample Type": "None",
@@ -245,6 +251,8 @@ class MainWindow(QMainWindow):
             try:
                 self.serial_connection = serial.Serial(settings['serial_port'], settings['baud_rate'], timeout=1)
                 print(f"✅ Serial Connected: {settings['serial_port']}")
+                self.serial_connection.dtr = False
+                self.serial_connection.rts = False
             except Exception as e:
                 # Tampilkan pesan error jika COM Port gagal dibuka (misal dipakai Arduino IDE)
                 QMessageBox.warning(self, "Serial Error", f"Gagal buka port {settings['serial_port']}!\n\nPastikan Serial Monitor di Arduino IDE sudah DITUTUP.\n\nError: {e}")
@@ -257,10 +265,18 @@ class MainWindow(QMainWindow):
     def on_connection_status(self, connected: bool):
         if connected:
             self.connection_panel.set_status("Hybrid Connected", STATUS_COLORS['connected'])
-            self.control_panel.enable_start(True)
-            self.statusBar().showMessage("Connected: Data (WiFi) + Control (Ready)")
+            self.statusBar().showMessage("Connected: Data (WiFi) Ready. Waiting for Serial...")
             self.connection_panel.connect_btn.setText("Connected")
             self.connection_panel.connect_btn.setEnabled(False)
+            
+            # --- PERBAIKAN LOGIC ---
+            # Hanya aktifkan Start jika Serial juga sudah terhubung
+            if self.serial_connection and self.serial_connection.is_open:
+                 self.control_panel.enable_start(True)
+                 self.statusBar().showMessage("SYSTEM READY: WiFi (Data) + Serial (Control)")
+            else:
+                 self.statusBar().showMessage("WARNING: WiFi Connected but Serial MISSING (Cannot Control)")
+            # -----------------------
         else:
             self.connection_panel.set_status("Disconnected", STATUS_COLORS['disconnected'])
             self.control_panel.enable_start(False)
@@ -271,8 +287,8 @@ class MainWindow(QMainWindow):
     def on_start_sampling(self):
         # 1. Validasi Input UI
         sample_info = self.control_panel.get_sample_info()
-        if not sample_info['name']:
-            QMessageBox.warning(self, "Warning", "Please enter a sample name!")
+        if not self.serial_connection or not self.serial_connection.is_open:
+            QMessageBox.critical(self, "Error", "Serial connection lost! Cannot start sampling.")
             return
         
         self.info_table.setItem(0, 1, QTableWidgetItem(sample_info['name']))
@@ -282,11 +298,25 @@ class MainWindow(QMainWindow):
         self.sampling_times = []
         self.plot_widget.clear_data()
         
+        self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
+        try:
+            # Kirim perintah
+            self.serial_connection.write(b"START_SAMPLING\n")
+            self.serial_connection.flush() # --- PENTING: Paksa kirim buffer ---
+            print("Sent: START_SAMPLING")  # Debugging
+            
+            self.statusBar().showMessage("Command Sent. Waiting for Arduino response...")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Serial Error", f"Failed to send command: {e}")
+            self.on_stop_sampling() # Reset UI jika gagal
+        
         self.is_sampling = True
         self.start_time = 0
         
         self.control_panel.enable_start(False)
         self.control_panel.enable_stop(True)
+        
         
         # 2. KIRIM COMMAND VIA SERIAL (UTAMA)
         # Ini logic "lama" yang terbukti jalan untuk menggerakkan hardware
@@ -559,3 +589,27 @@ class MainWindow(QMainWindow):
         if self.network_worker: self.network_worker.stop()
         if self.serial_connection: self.serial_connection.close()
         event.accept()
+
+    # --- TAMBAHAN BARU: Fungsi untuk Membaca Output Serial Arduino ---
+    def read_serial_debug(self):
+        """Membaca pesan debug dari Arduino (seperti 'Connecting...', 'READY')"""
+        if self.serial_connection and self.serial_connection.is_open:
+            try:
+                # Cek apakah ada data yang menunggu dibaca
+                if self.serial_connection.in_waiting > 0:
+                    # Baca baris, decode, dan bersihkan whitespace
+                    raw_line = self.serial_connection.readline()
+                    line = raw_line.decode('utf-8', errors='ignore').strip()
+                    
+                    if line:
+                        print(f"🤖 [ARDUINO SAYS]: {line}") # Tampilkan di Terminal Python
+                        
+                        # Update status bar jika Arduino sudah siap
+                        if "READY" in line:
+                            self.statusBar().showMessage(f"✅ ARDUINO SIAP! ({line})")
+                        elif "WiFi Connected" in line:
+                            self.statusBar().showMessage("✅ WiFi Terhubung!")
+                        elif line == ".":
+                            self.statusBar().showMessage("⏳ Arduino sedang menyambungkan WiFi...")
+            except Exception as e:
+                print(f"Serial Read Error: {e}")
