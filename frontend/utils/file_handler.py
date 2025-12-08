@@ -1,8 +1,8 @@
-"""File handling utilities (Updated for Edge Impulse JSON & API)"""
+"""File handling utilities (Fixed: Invalid Signature Error)"""
 
 import csv
 import json
-import requests  # Pastikan library ini ada (pip install requests)
+import requests
 import os
 from pathlib import Path
 from datetime import datetime
@@ -16,24 +16,25 @@ class FileHandler:
                    times: List[float], sensor_names: List[str]) -> bool:
         """Save data as CSV (Standard Format)"""
         try:
-            # Buat folder 'data' jika belum ada
             Path("data").mkdir(exist_ok=True)
             
             with open(filename, 'w', newline='') as f:
                 writer = csv.writer(f)
                 
-                # Metadata (Header Informasi)
+                # Metadata
                 writer.writerow(["Electronic Nose Data Export"])
                 writer.writerow(["Sample Name", data.get('name', 'Unknown')])
                 writer.writerow(["Sample Type", data.get('type', 'Unknown')])
                 writer.writerow(["Export Date", datetime.now().isoformat()])
-                writer.writerow([])
+                writer.writerow(["Mode", "Auto FSM"])
+                writer.writerow(["Number of Points", len(times)])
+                writer.writerow([]) # Empty line
                 
-                # Nama Kolom (Waktu + Nama Sensor)
+                # Headers
                 headers = ["Time (s)"] + [name for name in sensor_names]
                 writer.writerow(headers)
                 
-                # Isi Data Baris per Baris
+                # Data Rows
                 for t_idx, t in enumerate(times):
                     row = [f"{t:.3f}"]
                     for s_idx in range(len(sensor_data)):
@@ -50,29 +51,29 @@ class FileHandler:
     @staticmethod
     def save_edge_impulse_json(filename: str, sample_name: str, sensor_names: List[str], 
                              sensor_data: Dict[int, List[float]], interval_ms: float) -> bool:
-        """
-        Save data in Edge Impulse Data Acquisition Format (JSON).
-        Standard: https://docs.edgeimpulse.com/reference/data-acquisition-format
-        """
+        """Save data in Edge Impulse Data Acquisition Format (JSON)"""
         try:
             Path("data").mkdir(exist_ok=True)
             
-            # 1. Transpose data (Ubah dari kolom ke baris agar sesuai format Edge Impulse)
+            # Transpose data (Column to Row based)
             values = []
-            num_points = len(sensor_data[0]) if sensor_data else 0
+            num_points = 0
+            if sensor_data and 0 in sensor_data:
+                num_points = len(sensor_data[0])
             
             for i in range(num_points):
                 row = []
                 for j in range(len(sensor_names)):
-                    val = sensor_data[j][i] if i < len(sensor_data[j]) else 0.0
+                    val = sensor_data[j][i] if (j in sensor_data and i < len(sensor_data[j])) else 0.0
                     row.append(val)
                 values.append(row)
             
-            # 2. Buat Struktur JSON Edge Impulse
+            # PERBAIKAN DI SINI:
+            # Menggunakan "alg": "none" agar server tidak menagih signature panjang
             payload = {
                 "protected": {
-                    "ver": "v1",
-                    "alg": "HS256",
+                    "ver": "v1", 
+                    "alg": "none", # <--- UPDATE PENTING (Sebelumnya HS256)
                     "iat": int(datetime.now().timestamp())
                 },
                 "signature": "0", 
@@ -85,14 +86,10 @@ class FileHandler:
                 }
             }
             
-            # 3. Simpan File (.json)
-            # Pastikan nama file berakhiran .json
             if not filename.endswith('.json'):
-                json_filename = filename.replace(".csv", ".json")
-            else:
-                json_filename = filename
+                filename = filename.replace('.csv', '.json')
                 
-            with open(json_filename, 'w') as f:
+            with open(filename, 'w') as f:
                 json.dump(payload, f, indent=2)
                 
             return True
@@ -101,34 +98,93 @@ class FileHandler:
             return False
 
     @staticmethod
+    def convert_csv_to_json(csv_filename: str) -> bool:
+        """
+        Membaca file CSV format 'Electronic Nose Data Export' 
+        dan mengubahnya menjadi format JSON Edge Impulse.
+        """
+        try:
+            if not os.path.exists(csv_filename):
+                return False
+
+            with open(csv_filename, 'r') as f:
+                reader = csv.reader(f)
+                lines = list(reader)
+
+            # 1. Parsing Metadata
+            sample_name = "Unknown"
+            start_row_data = 0
+            
+            for i, line in enumerate(lines[:15]):
+                if len(line) >= 2 and line[0] == "Sample Name":
+                    sample_name = line[1]
+                if len(line) > 0 and line[0].startswith("Time"):
+                    start_row_data = i
+                    break
+            
+            if start_row_data == 0 and sample_name == "Unknown":
+                print("Format CSV tidak dikenali")
+                return False
+
+            header_row = lines[start_row_data]
+            sensor_names = header_row[1:] 
+            
+            # 2. Parsing Data Values
+            parsed_sensor_data = {i: [] for i in range(len(sensor_names))}
+            times = []
+            
+            for row in lines[start_row_data + 1:]:
+                if len(row) < 2: continue
+                try:
+                    t = float(row[0])
+                    times.append(t)
+                    for s_idx in range(len(sensor_names)):
+                        val = float(row[s_idx + 1])
+                        parsed_sensor_data[s_idx].append(val)
+                except ValueError:
+                    continue
+
+            if not times:
+                return False
+
+            # 3. Hitung Interval (ms)
+            interval_ms = 100.0 
+            if len(times) > 1:
+                diffs = []
+                for k in range(min(5, len(times)-1)):
+                    diffs.append(times[k+1] - times[k])
+                avg_diff_sec = sum(diffs) / len(diffs)
+                interval_ms = avg_diff_sec * 1000.0
+
+            # 4. Save as JSON (Panggil fungsi yang sudah diperbaiki)
+            json_filename = csv_filename.replace(".csv", ".json")
+            return FileHandler.save_edge_impulse_json(
+                json_filename, sample_name, sensor_names, parsed_sensor_data, interval_ms
+            )
+
+        except Exception as e:
+            print(f"Error converting CSV to JSON: {str(e)}")
+            return False
+
+    @staticmethod
     def upload_to_edge_impulse(filename: str, api_key: str, label: str = None) -> Tuple[bool, str]:
-        """
-        Upload JSON file directly to Edge Impulse Ingestion API.
-        Endpoint: https://ingestion.edgeimpulse.com/api/training/files
-        """
+        """Upload JSON file directly to Edge Impulse Ingestion API."""
         url = "https://ingestion.edgeimpulse.com/api/training/files"
         
         headers = {
             "x-api-key": api_key,
             "x-disallow-duplicates": "1",
         }
-        
-        # Jika label diberikan, tambahkan ke header agar otomatis ter-label
-        if label:
-            headers["x-label"] = label
+        if label: headers["x-label"] = label
 
         try:
-            # Cek apakah file ada
             if not os.path.exists(filename):
                 return False, "File JSON tidak ditemukan"
 
-            # Kirim request POST ke Edge Impulse
             with open(filename, 'rb') as f:
-                # Mengirim file sebagai multipart/form-data
                 files = {'data': (os.path.basename(filename), f, 'application/json')}
                 response = requests.post(url, headers=headers, files=files)
             
-            # Cek respon dari server
             if response.status_code == 200:
                 return True, f"Success: {response.text}"
             else:

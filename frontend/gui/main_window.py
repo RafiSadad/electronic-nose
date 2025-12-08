@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QTabWidget, QTableWidget,
     QTableWidgetItem, QLabel, QInputDialog, QHeaderView,
-    QAbstractItemView
+    QAbstractItemView, QLineEdit
 )
 from PySide6.QtCore import QTimer, Qt, QSize
 from PySide6.QtGui import QFont, QIcon, QPixmap
@@ -103,15 +103,22 @@ class MainWindow(QMainWindow):
         lib_layout = QVBoxLayout()
         
         lib_header = QHBoxLayout()
-        lib_label = QLabel("📂 Data Library (Double Click to Open Gnuplot)")
+        lib_label = QLabel("📂 Data Library")
         lib_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
         lib_header.addWidget(lib_label)
         
-        self.refresh_lib_btn = QPushButton("🔄 Refresh Library")
-        self.refresh_lib_btn.setFixedWidth(150)
+        # Tombol Upload Khusus Library
+        self.upload_lib_btn = QPushButton("☁️ Upload Selected to EI")
+        self.upload_lib_btn.setFixedWidth(180)
+        self.upload_lib_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+        self.upload_lib_btn.clicked.connect(self.on_library_upload_click)
+        lib_header.addWidget(self.upload_lib_btn)
+        
+        self.refresh_lib_btn = QPushButton("🔄 Refresh")
+        self.refresh_lib_btn.setFixedWidth(100)
         self.refresh_lib_btn.clicked.connect(self.refresh_library)
         lib_header.addWidget(self.refresh_lib_btn)
-        lib_header.addStretch()
+        
         lib_layout.addLayout(lib_header)
 
         # 4 Kolom: Preview, Filename, Last Modified, Size
@@ -154,18 +161,33 @@ class MainWindow(QMainWindow):
         
         main_layout.addWidget(self.tabs)
         
-        # Action buttons
+        # --- ACTION BUTTONS (BOTTOM) ---
         button_layout = QHBoxLayout()
         
-        self.edge_impulse_btn = QPushButton("🚀 Upload to Edge Impulse")
-        self.edge_impulse_btn.clicked.connect(self.on_edge_impulse)
+        # 1. API Key Input
+        api_label = QLabel("EI API Key:")
+        api_label.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        button_layout.addWidget(api_label)
+
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setPlaceholderText("Paste Edge Impulse API Key here...")
+        self.api_key_input.setEchoMode(QLineEdit.Password) 
+        self.api_key_input.setFixedWidth(200)
+        self.api_key_input.setToolTip("API Key ini dipakai untuk tombol Upload di bawah & di Library")
+        button_layout.addWidget(self.api_key_input)
+
+        # 2. Upload Button (Current Session)
+        self.edge_impulse_btn = QPushButton("🚀 Upload Session")
+        self.edge_impulse_btn.clicked.connect(self.on_edge_impulse_session)
         button_layout.addWidget(self.edge_impulse_btn)
         
-        self.export_csv_btn = QPushButton("📥 Export as CSV")
+        # 3. Export CSV
+        self.export_csv_btn = QPushButton("📥 Export CSV")
         self.export_csv_btn.clicked.connect(self.on_save_data)
         button_layout.addWidget(self.export_csv_btn)
         
-        self.clear_btn = QPushButton("🗑️ Clear Plot")
+        # 4. Clear Plot
+        self.clear_btn = QPushButton("🗑️ Clear")
         self.clear_btn.clicked.connect(self.on_clear_plot)
         button_layout.addWidget(self.clear_btn)
         
@@ -242,6 +264,7 @@ class MainWindow(QMainWindow):
             self.connection_panel.connect_btn.setEnabled(True)
 
     def on_start_sampling(self):
+        # 1. Update UI
         sample_info = self.control_panel.get_sample_info()
         if not sample_info['name']:
             QMessageBox.warning(self, "Warning", "Please enter a sample name!")
@@ -260,6 +283,12 @@ class MainWindow(QMainWindow):
         self.control_panel.enable_start(False)
         self.control_panel.enable_stop(True)
         
+        # 2. SEND COMMAND TO NETWORK (WIFI) -> Ini yang tadi kurang
+        if self.network_worker:
+            self.network_worker.send_command("START_SAMPLING")
+            self.statusBar().showMessage("Sending START to Network...")
+
+        # 3. SEND COMMAND TO SERIAL (BACKUP)
         if self.serial_connection and self.serial_connection.is_open:
             try:
                 self.serial_connection.write(b"START_SAMPLING\n")
@@ -303,6 +332,12 @@ class MainWindow(QMainWindow):
 
     def on_stop_sampling(self):
         self.is_sampling = False
+        
+        # 1. SEND STOP TO NETWORK
+        if self.network_worker:
+            self.network_worker.send_command("STOP_SAMPLING")
+
+        # 2. SEND STOP TO SERIAL
         if self.serial_connection and self.serial_connection.is_open:
             try:
                 self.serial_connection.write(b"STOP_SAMPLING\n")
@@ -330,22 +365,28 @@ class MainWindow(QMainWindow):
             
             QMessageBox.information(self, "Success", f"Data saved to {filename}")
             
-            # 2. Buka Plot (Ini akan otomatis generate PNG + Interactive)
+            # 2. Buka Plot (Auto Generate PNG + Interactive)
             reply = QMessageBox.question(self, "Visualisasi", "Buka grafik di GNUPLOT?", 
                                        QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.Yes:
                 self.open_interactive_plot(filename)
             else:
-                # Kalau user pilih NO, tetap generate PNG di background untuk Library
                 self.generate_png(filename)
                 self.refresh_library()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed: {str(e)}")
 
-    def on_edge_impulse(self):
+    def on_edge_impulse_session(self):
+        """Upload sesi yang sedang berlangsung/baru selesai"""
         if not self.sampling_times:
             QMessageBox.warning(self, "Warning", "No data to upload!")
+            return
+            
+        api_key = self.api_key_input.text().strip()
+        if not api_key:
+            QMessageBox.warning(self, "API Key Missing", "Silakan isi API Key di kolom bawah terlebih dahulu!")
+            self.api_key_input.setFocus()
             return
 
         sample_info = self.control_panel.get_sample_info()
@@ -358,83 +399,56 @@ class MainWindow(QMainWindow):
                 self.sampling_data, self.update_interval
             )
             
-            if not success:
-                QMessageBox.warning(self, "Error", "Gagal menyimpan file JSON lokal.")
-                return
-            
-            self.refresh_library() 
-
-            reply = QMessageBox.question(
-                self, "Upload Method", 
-                "File JSON berhasil dibuat.\nUpload otomatis via API?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-
-            if reply == QMessageBox.Yes:
-                api_key, ok = QInputDialog.getText(self, "Edge Impulse API Key", "Masukkan 'EI Project API Key':")
-                if ok and api_key:
-                    self.statusBar().showMessage("Uploading...")
-                    is_uploaded, msg = FileHandler.upload_to_edge_impulse(filename, api_key, sample_info['name'])
-                    if is_uploaded:
-                        QMessageBox.information(self, "Success", f"Upload Berhasil!\n{msg}")
-                    else:
-                        QMessageBox.critical(self, "Failed", f"Gagal Upload:\n{msg}")
-            else:
-                webbrowser.open("https://studio.edgeimpulse.com/studio/select-project?next=/data-acquisition")
+            if success:
+                self.refresh_library()
+                self.statusBar().showMessage("Uploading to Edge Impulse...")
+                
+                is_uploaded, msg = FileHandler.upload_to_edge_impulse(filename, api_key, sample_info['name'])
+                
+                if is_uploaded:
+                    QMessageBox.information(self, "Success", f"Upload Berhasil!\n{msg}")
+                    self.statusBar().showMessage("Upload Success")
+                else:
+                    QMessageBox.critical(self, "Failed", f"Gagal Upload:\n{msg}")
+                    self.statusBar().showMessage("Upload Failed")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error: {str(e)}")
-            
+
     # --- FITUR LIBRARY & PLOTTER ---
     def generate_png(self, csv_filename):
-        """
-        Menjalankan perintah:
-        gnuplot -c plot_config.plt "data/file.csv" "data/file.png"
-        """
         script_png = "plot_config.plt"
-        # Cek lokasi script
         if not os.path.exists(script_png) and os.path.exists(f"data/{script_png}"):
              script_png = f"data/{script_png}"
         
         png_filename = csv_filename.replace('.csv', '.png')
         try:
-            # check=False supaya tidak crash kalau gnuplot error/warning
             subprocess.run(["gnuplot", "-c", script_png, csv_filename, png_filename], check=False)
-            print(f"Generated PNG: {png_filename}")
-        except Exception as e:
-            print(f"Failed to generate PNG: {e}")
+        except: pass
 
     def open_interactive_plot(self, csv_filename):
-        """
-        1. Generate PNG DULU (Background) -> gnuplot -c plot_config.plt
-        2. Baru Buka Interactive Window -> gnuplot -p -c plot_interactive.plt
-        """
+        self.generate_png(csv_filename) # Pastikan PNG ada
         
-        # --- LANGKAH 1: Generate PNG (Request Anda) ---
-        self.generate_png(csv_filename)
-        
-        # --- LANGKAH 2: Buka Window Interaktif ---
         script_interactive = "plot_interactive.plt"
         if not os.path.exists(script_interactive) and os.path.exists(f"data/{script_interactive}"):
              script_interactive = f"data/{script_interactive}"
         
         try:
-            # Gunakan Popen agar window terpisah dan tidak freeze aplikasi utama
             subprocess.Popen(["gnuplot", "-p", "-c", script_interactive, csv_filename])
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Gagal membuka Gnuplot Interaktif:\n{str(e)}")
             
-        # Refresh library agar thumbnail PNG yang baru dibuat langsung muncul
         self.refresh_library()
 
     def refresh_library(self):
-        """Membaca folder data/ dan menampilkannya dengan Thumbnail"""
+        """Membaca folder data/, HANYA CSV yang ditampilkan"""
         self.lib_table.setRowCount(0)
         
         if not os.path.exists("data"):
             return
-            
-        files = glob.glob("data/*.csv") + glob.glob("data/*.json")
+        
+        # HANYA ambil file .csv
+        files = glob.glob("data/*.csv")
         files.sort(key=os.path.getmtime, reverse=True)
         
         for file_path in files:
@@ -444,47 +458,93 @@ class MainWindow(QMainWindow):
             
             filename = os.path.basename(file_path)
             
-            # --- KOLOM 0: PREVIEW ---
+            # Kolom Preview (Cari PNG pasangannya)
             preview_item = QTableWidgetItem()
-            png_path = file_path.replace(".csv", ".png").replace(".json", ".png")
+            png_path = file_path.replace(".csv", ".png")
             
-            if os.path.exists(png_path) and filename.endswith(".csv"):
+            if os.path.exists(png_path):
                 icon = QIcon(png_path)
                 preview_item.setIcon(icon)
                 preview_item.setText("")
-            elif filename.endswith(".json"):
-                 preview_item.setText("JSON")
-                 preview_item.setTextAlignment(Qt.AlignCenter)
             else:
-                 preview_item.setText("No Img")
+                 preview_item.setText("No Preview")
                  preview_item.setTextAlignment(Qt.AlignCenter)
                  
             self.lib_table.setItem(row, 0, preview_item)
-            
-            # --- KOLOM 1: FILENAME ---
             self.lib_table.setItem(row, 1, QTableWidgetItem(filename))
             
-            # --- KOLOM 2: TIME ---
             timestamp = os.path.getmtime(file_path)
             date_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
             self.lib_table.setItem(row, 2, QTableWidgetItem(date_str))
             
-            # --- KOLOM 3: SIZE ---
             size_kb = os.path.getsize(file_path) / 1024
             self.lib_table.setItem(row, 3, QTableWidgetItem(f"{size_kb:.1f} KB"))
 
     def on_library_double_click(self, row, col):
-        """Saat user double click file di library"""
-        item = self.lib_table.item(row, 1) # Ambil filename dari col 1
+        item = self.lib_table.item(row, 1) # Filename di kolom 1
         if item:
             filename = item.text()
             full_path = os.path.join("data", filename)
             
-            if filename.endswith(".csv"):
-                # Panggil fungsi yang sudah di-update (Generate PNG + Open Interactive)
-                self.open_interactive_plot(full_path)
+            # Buka Plot Interaktif (karena sudah pasti CSV)
+            self.open_interactive_plot(full_path)
+
+    def on_library_upload_click(self):
+        """Upload file CSV yang dipilih di Library (Auto convert to JSON)"""
+        # 1. Cek API Key
+        api_key = self.api_key_input.text().strip()
+        if not api_key:
+            QMessageBox.warning(self, "API Key Missing", "Silakan isi API Key di kolom bawah terlebih dahulu!")
+            self.api_key_input.setFocus()
+            return
+
+        # 2. Cek Seleksi Tabel
+        rows = self.lib_table.selectionModel().selectedRows()
+        if not rows:
+            QMessageBox.warning(self, "Warning", "Pilih salah satu file di tabel Library dulu!")
+            return
+        
+        # 3. Ambil Filename dari baris yang dipilih
+        row_idx = rows[0].row()
+        filename = self.lib_table.item(row_idx, 1).text()
+        
+        # Path CSV asli
+        csv_full_path = os.path.join("data", filename) # Filename di tabel sudah pasti CSV
+        
+        # Path JSON target
+        json_filename = filename.replace('.csv', '.json')
+        json_full_path = os.path.join("data", json_filename)
+        
+        # 4. LOGIKA AUTO-CONVERT
+        if not os.path.exists(json_full_path):
+            if os.path.exists(csv_full_path):
+                self.statusBar().showMessage(f"Converting {filename} to JSON...")
+                success = FileHandler.convert_csv_to_json(csv_full_path)
+                
+                if not success:
+                    QMessageBox.warning(self, "Conversion Error", "Gagal mengonversi CSV ke JSON. Cek format CSV.")
+                    self.statusBar().showMessage("Conversion Failed")
+                    return
+                
+                # Kita tidak refresh library agar JSON tidak muncul (karena kita hide JSON)
             else:
-                QMessageBox.information(self, "Info", "File JSON tidak bisa diplot.")
+                QMessageBox.warning(self, "Error", f"File sumber tidak ditemukan:\n{csv_full_path}")
+                return
+
+        # 5. Proses Upload
+        self.statusBar().showMessage(f"Uploading {json_filename}...")
+        
+        # Ambil label dari nama file
+        label = json_filename.split('_')[0].split('-')[0] 
+        
+        is_uploaded, msg = FileHandler.upload_to_edge_impulse(json_full_path, api_key, label)
+        
+        if is_uploaded:
+            QMessageBox.information(self, "Success", f"Berhasil Upload ke Edge Impulse!\nFile: {json_filename}\nResponse: {msg}")
+            self.statusBar().showMessage("Upload Library Success")
+        else:
+            QMessageBox.critical(self, "Failed", f"Gagal Upload:\n{msg}")
+            self.statusBar().showMessage("Upload Library Failed")
 
     def on_clear_plot(self):
         if QMessageBox.question(self, "Confirm", "Clear data?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
