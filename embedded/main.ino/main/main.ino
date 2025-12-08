@@ -11,9 +11,9 @@
 #include "Multichannel_Gas_GMXXX.h"
 
 // ==================== 1. KONFIGURASI JARINGAN (SUDAH SESUAI) ====================
-const char* ssid     = "WARKOP TERAS";       // WiFi 2.4GHz
-const char* pass     = "upinipin";      // Password
-const char* RUST_IP  = "192.168.1.121";   // IP Laptop Kamu
+const char* ssid     = "Sadad's phone";       // WiFi 2.4GHz
+const char* pass     = "uhuyuhuy";      // Password
+const char* RUST_IP  = "172.18.208.1";   // IP Laptop Kamu
 const int   RUST_PORT = 8081;            // Port Backend
 
 WiFiClient client;

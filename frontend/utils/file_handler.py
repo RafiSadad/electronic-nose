@@ -1,10 +1,12 @@
-"""File handling utilities (Updated for Edge Impulse JSON)"""
+"""File handling utilities (Updated for Edge Impulse JSON & API)"""
 
 import csv
 import json
+import requests  # Pastikan library ini ada (pip install requests)
+import os
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 class FileHandler:
     """Handle file operations"""
@@ -14,23 +16,24 @@ class FileHandler:
                    times: List[float], sensor_names: List[str]) -> bool:
         """Save data as CSV (Standard Format)"""
         try:
+            # Buat folder 'data' jika belum ada
             Path("data").mkdir(exist_ok=True)
             
             with open(filename, 'w', newline='') as f:
                 writer = csv.writer(f)
                 
-                # Metadata
+                # Metadata (Header Informasi)
                 writer.writerow(["Electronic Nose Data Export"])
                 writer.writerow(["Sample Name", data.get('name', 'Unknown')])
                 writer.writerow(["Sample Type", data.get('type', 'Unknown')])
                 writer.writerow(["Export Date", datetime.now().isoformat()])
                 writer.writerow([])
                 
-                # Headers
+                # Nama Kolom (Waktu + Nama Sensor)
                 headers = ["Time (s)"] + [name for name in sensor_names]
                 writer.writerow(headers)
                 
-                # Data Rows
+                # Isi Data Baris per Baris
                 for t_idx, t in enumerate(times):
                     row = [f"{t:.3f}"]
                     for s_idx in range(len(sensor_data)):
@@ -54,7 +57,7 @@ class FileHandler:
         try:
             Path("data").mkdir(exist_ok=True)
             
-            # 1. Transpose data
+            # 1. Transpose data (Ubah dari kolom ke baris agar sesuai format Edge Impulse)
             values = []
             num_points = len(sensor_data[0]) if sensor_data else 0
             
@@ -83,7 +86,12 @@ class FileHandler:
             }
             
             # 3. Simpan File (.json)
-            json_filename = filename.replace(".csv", ".json")
+            # Pastikan nama file berakhiran .json
+            if not filename.endswith('.json'):
+                json_filename = filename.replace(".csv", ".json")
+            else:
+                json_filename = filename
+                
             with open(json_filename, 'w') as f:
                 json.dump(payload, f, indent=2)
                 
@@ -91,3 +99,40 @@ class FileHandler:
         except Exception as e:
             print(f"Error saving Edge Impulse JSON: {str(e)}")
             return False
+
+    @staticmethod
+    def upload_to_edge_impulse(filename: str, api_key: str, label: str = None) -> Tuple[bool, str]:
+        """
+        Upload JSON file directly to Edge Impulse Ingestion API.
+        Endpoint: https://ingestion.edgeimpulse.com/api/training/files
+        """
+        url = "https://ingestion.edgeimpulse.com/api/training/files"
+        
+        headers = {
+            "x-api-key": api_key,
+            "x-disallow-duplicates": "1",
+        }
+        
+        # Jika label diberikan, tambahkan ke header agar otomatis ter-label
+        if label:
+            headers["x-label"] = label
+
+        try:
+            # Cek apakah file ada
+            if not os.path.exists(filename):
+                return False, "File JSON tidak ditemukan"
+
+            # Kirim request POST ke Edge Impulse
+            with open(filename, 'rb') as f:
+                # Mengirim file sebagai multipart/form-data
+                files = {'data': (os.path.basename(filename), f, 'application/json')}
+                response = requests.post(url, headers=headers, files=files)
+            
+            # Cek respon dari server
+            if response.status_code == 200:
+                return True, f"Success: {response.text}"
+            else:
+                return False, f"Failed ({response.status_code}): {response.text}"
+                
+        except Exception as e:
+            return False, f"Connection Error: {str(e)}"

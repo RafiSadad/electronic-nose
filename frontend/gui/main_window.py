@@ -3,15 +3,18 @@
 import serial
 import subprocess
 import webbrowser
+import os
+import glob
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QMessageBox, QTabWidget, QTableWidget,
-    QTableWidgetItem, QLabel
+    QTableWidgetItem, QLabel, QInputDialog, QHeaderView,
+    QAbstractItemView
 )
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QTimer, Qt, QSize
+from PySide6.QtGui import QFont, QIcon, QPixmap
 
 # Import Modules Sendiri
 from gui.widgets import ControlPanel, ConnectionPanel, SensorPlot, GnuplotWidget
@@ -63,11 +66,11 @@ class MainWindow(QMainWindow):
         # Create tab widget
         self.tabs = QTabWidget()
         
-        # Tab 1: Real-time plot
+        # --- TAB 1: Real-time plot ---
         self.plot_widget = SensorPlot("Real-Time Sensor Data")
         self.tabs.addTab(self.plot_widget, "📊 Real-Time Plot")
         
-        # Tab 2: Control panel and data info
+        # --- TAB 2: Control panel ---
         tab2 = QWidget()
         tab2_layout = QVBoxLayout()
         
@@ -95,7 +98,44 @@ class MainWindow(QMainWindow):
         tab2.setLayout(tab2_layout)
         self.tabs.addTab(tab2, "⚙️ Control Panel")
         
-        # Tab 3: Data statistics
+        # --- TAB 3: Data Library ---
+        self.library_tab = QWidget()
+        lib_layout = QVBoxLayout()
+        
+        lib_header = QHBoxLayout()
+        lib_label = QLabel("📂 Data Library (Double Click to Open Gnuplot)")
+        lib_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        lib_header.addWidget(lib_label)
+        
+        self.refresh_lib_btn = QPushButton("🔄 Refresh Library")
+        self.refresh_lib_btn.setFixedWidth(150)
+        self.refresh_lib_btn.clicked.connect(self.refresh_library)
+        lib_header.addWidget(self.refresh_lib_btn)
+        lib_header.addStretch()
+        lib_layout.addLayout(lib_header)
+
+        # 4 Kolom: Preview, Filename, Last Modified, Size
+        self.lib_table = QTableWidget(0, 4)
+        self.lib_table.setHorizontalHeaderLabels(["Preview", "Filename", "Last Modified", "Size"])
+        self.lib_table.setIconSize(QSize(160, 90)) # Ukuran Thumbnail
+        
+        # Konfigurasi Header
+        header = self.lib_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Fixed)       # Kolom Preview Tetap
+        self.lib_table.setColumnWidth(0, 180)                   # Lebar kolom preview
+        header.setSectionResizeMode(1, QHeaderView.Stretch)     # Filename lebar
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents) 
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        
+        self.lib_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.lib_table.setEditTriggers(QAbstractItemView.NoEditTriggers) 
+        self.lib_table.cellDoubleClicked.connect(self.on_library_double_click)
+        
+        lib_layout.addWidget(self.lib_table)
+        self.library_tab.setLayout(lib_layout)
+        self.tabs.addTab(self.library_tab, "📚 Data Library")
+
+        # --- TAB 4: Statistics ---
         tab3 = QWidget()
         tab3_layout = QVBoxLayout()
         
@@ -138,6 +178,9 @@ class MainWindow(QMainWindow):
         
         self.update_interval = UPDATE_INTERVAL
         
+        # Load library awal
+        self.refresh_library()
+
     def populate_info_table(self):
         info = {
             "Sample Name": "None", "Sample Type": "None",
@@ -177,9 +220,9 @@ class MainWindow(QMainWindow):
                 self.serial_connection = serial.Serial(settings['serial_port'], settings['baud_rate'], timeout=1)
                 print(f"✅ Serial Connected: {settings['serial_port']}")
             except Exception as e:
-                QMessageBox.warning(self, "Serial Error", f"Failed: {e}")
+                pass 
         else:
-            QMessageBox.warning(self, "Warning", "No Serial Port selected!")
+            pass 
 
     def handle_network_error(self, msg: str):
         self.statusBar().showMessage(msg)
@@ -220,9 +263,7 @@ class MainWindow(QMainWindow):
         if self.serial_connection and self.serial_connection.is_open:
             try:
                 self.serial_connection.write(b"START_SAMPLING\n")
-                self.statusBar().showMessage("Sampling Started via Serial")
-            except Exception as e:
-                QMessageBox.critical(self, "Serial Error", f"Failed: {e}")
+            except: pass
         
         self.connection_panel.set_status("Sampling...", STATUS_COLORS['sampling'])
     
@@ -258,7 +299,7 @@ class MainWindow(QMainWindow):
                     self.on_stop_sampling()
                     QMessageBox.information(self, "Finished", "Sampling sequence completed!")
         except Exception as e:
-            print(f"Error parsing data: {e}")
+            pass
 
     def on_stop_sampling(self):
         self.is_sampling = False
@@ -272,7 +313,7 @@ class MainWindow(QMainWindow):
         self.connection_panel.set_status("Hybrid Connected", STATUS_COLORS['connected'])
         self.statusBar().showMessage(f"Stopped. Collected {len(self.sampling_times)} points.")
     
-    # --- FITUR 1: SAVE CSV + GNUPLOT ---
+    # --- FITUR SAVE & UPLOAD ---
     def on_save_data(self):
         if not self.sampling_times:
             QMessageBox.warning(self, "Warning", "No data to save!")
@@ -283,37 +324,25 @@ class MainWindow(QMainWindow):
         filename = f"data/{sample_info['name'].replace(' ', '_')}_{timestamp}.csv"
         
         try:
-            # Simpan CSV
+            # 1. Simpan CSV
             FileHandler.save_as_csv(filename, sample_info, self.sampling_data, 
                                   self.sampling_times, SENSOR_NAMES)
+            
             QMessageBox.information(self, "Success", f"Data saved to {filename}")
-
-            # Tanya Gnuplot
+            
+            # 2. Buka Plot (Ini akan otomatis generate PNG + Interactive)
             reply = QMessageBox.question(self, "Visualisasi", "Buka grafik di GNUPLOT?", 
                                        QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.Yes:
-                self.open_gnuplot(filename)
+                self.open_interactive_plot(filename)
+            else:
+                # Kalau user pilih NO, tetap generate PNG di background untuk Library
+                self.generate_png(filename)
+                self.refresh_library()
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed: {str(e)}")
 
-    def open_gnuplot(self, csv_filename):
-        png_filename = csv_filename.replace('.csv', '.png')
-        script_path = "plot_config.plt"
-        try:
-            # Generate PNG
-            cmd = ["gnuplot", "-c", script_path, csv_filename, png_filename]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                # Buka Widget Gambar
-                viewer = GnuplotWidget(png_filename, self)
-                viewer.exec()
-            else:
-                QMessageBox.warning(self, "Gnuplot Error", f"Gagal generate:\n{result.stderr}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"System Error:\n{str(e)}")
-
-    # --- FITUR 2: EDGE IMPULSE UPLOAD ---
     def on_edge_impulse(self):
         if not self.sampling_times:
             QMessageBox.warning(self, "Warning", "No data to upload!")
@@ -328,15 +357,135 @@ class MainWindow(QMainWindow):
                 filename, sample_info['name'], SENSOR_NAMES,
                 self.sampling_data, self.update_interval
             )
+            
+            if not success:
+                QMessageBox.warning(self, "Error", "Gagal menyimpan file JSON lokal.")
+                return
+            
+            self.refresh_library() 
 
-            if success:
-                QMessageBox.information(self, "Ready", f"JSON created at:\n{filename}\n\nBrowser opening...")
-                webbrowser.open("https://studio.edgeimpulse.com/studio/select-project?next=/data-acquisition")
+            reply = QMessageBox.question(
+                self, "Upload Method", 
+                "File JSON berhasil dibuat.\nUpload otomatis via API?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                api_key, ok = QInputDialog.getText(self, "Edge Impulse API Key", "Masukkan 'EI Project API Key':")
+                if ok and api_key:
+                    self.statusBar().showMessage("Uploading...")
+                    is_uploaded, msg = FileHandler.upload_to_edge_impulse(filename, api_key, sample_info['name'])
+                    if is_uploaded:
+                        QMessageBox.information(self, "Success", f"Upload Berhasil!\n{msg}")
+                    else:
+                        QMessageBox.critical(self, "Failed", f"Gagal Upload:\n{msg}")
             else:
-                QMessageBox.warning(self, "Error", "Gagal menyimpan JSON.")
+                webbrowser.open("https://studio.edgeimpulse.com/studio/select-project?next=/data-acquisition")
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error: {str(e)}")
-    
+            
+    # --- FITUR LIBRARY & PLOTTER ---
+    def generate_png(self, csv_filename):
+        """
+        Menjalankan perintah:
+        gnuplot -c plot_config.plt "data/file.csv" "data/file.png"
+        """
+        script_png = "plot_config.plt"
+        # Cek lokasi script
+        if not os.path.exists(script_png) and os.path.exists(f"data/{script_png}"):
+             script_png = f"data/{script_png}"
+        
+        png_filename = csv_filename.replace('.csv', '.png')
+        try:
+            # check=False supaya tidak crash kalau gnuplot error/warning
+            subprocess.run(["gnuplot", "-c", script_png, csv_filename, png_filename], check=False)
+            print(f"Generated PNG: {png_filename}")
+        except Exception as e:
+            print(f"Failed to generate PNG: {e}")
+
+    def open_interactive_plot(self, csv_filename):
+        """
+        1. Generate PNG DULU (Background) -> gnuplot -c plot_config.plt
+        2. Baru Buka Interactive Window -> gnuplot -p -c plot_interactive.plt
+        """
+        
+        # --- LANGKAH 1: Generate PNG (Request Anda) ---
+        self.generate_png(csv_filename)
+        
+        # --- LANGKAH 2: Buka Window Interaktif ---
+        script_interactive = "plot_interactive.plt"
+        if not os.path.exists(script_interactive) and os.path.exists(f"data/{script_interactive}"):
+             script_interactive = f"data/{script_interactive}"
+        
+        try:
+            # Gunakan Popen agar window terpisah dan tidak freeze aplikasi utama
+            subprocess.Popen(["gnuplot", "-p", "-c", script_interactive, csv_filename])
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Gagal membuka Gnuplot Interaktif:\n{str(e)}")
+            
+        # Refresh library agar thumbnail PNG yang baru dibuat langsung muncul
+        self.refresh_library()
+
+    def refresh_library(self):
+        """Membaca folder data/ dan menampilkannya dengan Thumbnail"""
+        self.lib_table.setRowCount(0)
+        
+        if not os.path.exists("data"):
+            return
+            
+        files = glob.glob("data/*.csv") + glob.glob("data/*.json")
+        files.sort(key=os.path.getmtime, reverse=True)
+        
+        for file_path in files:
+            row = self.lib_table.rowCount()
+            self.lib_table.insertRow(row)
+            self.lib_table.setRowHeight(row, 100)
+            
+            filename = os.path.basename(file_path)
+            
+            # --- KOLOM 0: PREVIEW ---
+            preview_item = QTableWidgetItem()
+            png_path = file_path.replace(".csv", ".png").replace(".json", ".png")
+            
+            if os.path.exists(png_path) and filename.endswith(".csv"):
+                icon = QIcon(png_path)
+                preview_item.setIcon(icon)
+                preview_item.setText("")
+            elif filename.endswith(".json"):
+                 preview_item.setText("JSON")
+                 preview_item.setTextAlignment(Qt.AlignCenter)
+            else:
+                 preview_item.setText("No Img")
+                 preview_item.setTextAlignment(Qt.AlignCenter)
+                 
+            self.lib_table.setItem(row, 0, preview_item)
+            
+            # --- KOLOM 1: FILENAME ---
+            self.lib_table.setItem(row, 1, QTableWidgetItem(filename))
+            
+            # --- KOLOM 2: TIME ---
+            timestamp = os.path.getmtime(file_path)
+            date_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            self.lib_table.setItem(row, 2, QTableWidgetItem(date_str))
+            
+            # --- KOLOM 3: SIZE ---
+            size_kb = os.path.getsize(file_path) / 1024
+            self.lib_table.setItem(row, 3, QTableWidgetItem(f"{size_kb:.1f} KB"))
+
+    def on_library_double_click(self, row, col):
+        """Saat user double click file di library"""
+        item = self.lib_table.item(row, 1) # Ambil filename dari col 1
+        if item:
+            filename = item.text()
+            full_path = os.path.join("data", filename)
+            
+            if filename.endswith(".csv"):
+                # Panggil fungsi yang sudah di-update (Generate PNG + Open Interactive)
+                self.open_interactive_plot(full_path)
+            else:
+                QMessageBox.information(self, "Info", "File JSON tidak bisa diplot.")
+
     def on_clear_plot(self):
         if QMessageBox.question(self, "Confirm", "Clear data?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             self.plot_widget.clear_data()
