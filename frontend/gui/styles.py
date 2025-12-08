@@ -1,175 +1,134 @@
 """
-Global Stylesheet & Color Palette (Nord Theme)
-Agar tampilan aplikasi konsisten dan modern.
+Global Stylesheet (Dark Theme) - FIXED CONTRAST
 """
 
-# --- PALET WARNA (NORD THEME) ---
-COLORS = {
-    'background': '#ECEFF4',    # Light Grey (Background Utama)
-    'surface':    '#FFFFFF',    # White (Panel/Card)
-    'primary':    '#5E81AC',    # Blue (Tombol Utama)
-    'secondary':  '#88C0D0',    # Cyan (Highlight)
-    'text':       '#2E3440',    # Dark Grey (Teks Utama)
-    'text_light': '#D8DEE9',    # Light Grey (Teks di Background Gelap)
-    'success':    '#A3BE8C',    # Green (Connected)
-    'warning':    '#EBCB8B',    # Yellow (Waiting)
-    'danger':     '#BF616A',    # Red (Disconnected/Stop)
-    'border':     '#D8DEE9',    # Border Color
+# Warna Palette (Untuk referensi)
+# Background Gelap: #1e1e1e (Deep Dark), #2b2b2b (Panel), #3d3d3d (Widget)
+# Teks: #ffffff (White), #b0b0b0 (Light Gray)
+# Aksen: #0078d4 (Blue), #d83b01 (Orange Red/Stop)
+
+STYLESHEET = """
+/* === GLOBAL WIDGET SETTINGS === */
+QWidget {
+    background-color: #2b2b2b;
+    color: #ffffff;  /* PENTING: Paksa semua teks jadi putih */
+    font-family: "Segoe UI", sans-serif;
+    font-size: 14px;
 }
 
-# --- STATUS COLORS (Untuk Indikator Bulat) ---
-STATUS_COLORS = {
-    'connected':    COLORS['success'],
-    'disconnected': COLORS['danger'],
-    'sampling':     COLORS['primary'],
-    'warning':      COLORS['warning']
+/* === MAIN WINDOW & PANELS === */
+QMainWindow {
+    background-color: #1e1e1e;
 }
 
-# --- GLOBAL STYLESHEET (QSS) ---
-STYLESHEET = f"""
-    /* === GLOBAL SETTINGS === */
-    QMainWindow {{
-        background-color: {COLORS['background']};
-    }}
-    QWidget {{
-        font-family: "Segoe UI";
-        font-size: 14px;
-        color: {COLORS['text']};
-    }}
+/* === GROUP BOX (Kontainer Panel) === */
+QGroupBox {
+    border: 1px solid #3d3d3d;
+    border-radius: 6px;
+    margin-top: 24px;
+    font-weight: bold;
+    color: #ffffff; /* Judul GroupBox Putih */
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px;
+    left: 10px;
+    color: #4cc2ff; /* Warna judul cyan muda agar kontras */
+}
 
-    /* === GROUP BOX (Panel Kotak) === */
-    QGroupBox {{
-        background-color: {COLORS['surface']};
-        border: 1px solid {COLORS['border']};
-        border-radius: 8px;
-        margin-top: 10px; /* Space for title */
-        padding-top: 15px;
-    }}
-    QGroupBox::title {{
-        subcontrol-origin: margin;
-        subcontrol-position: top left;
-        padding: 0 5px;
-        left: 10px;
-        color: {COLORS['primary']};
-        font-weight: bold;
-    }}
+/* === BUTTONS (Tombol) === */
+QPushButton {
+    background-color: #3d3d3d;
+    color: #ffffff;
+    border: 1px solid #505050;
+    border-radius: 4px;
+    padding: 6px 12px;
+}
+QPushButton:hover {
+    background-color: #4d4d4d;
+    border: 1px solid #0078d4;
+}
+QPushButton:pressed {
+    background-color: #0078d4;
+    color: white;
+}
+QPushButton:disabled {
+    background-color: #252525;
+    color: #707070;
+    border: 1px solid #303030;
+}
 
-    /* === BUTTONS === */
-    QPushButton {{
-        background-color: {COLORS['surface']};
-        border: 1px solid {COLORS['primary']};
-        color: {COLORS['primary']};
-        border-radius: 5px;
-        padding: 5px 15px;
-        font-weight: bold;
-    }}
-    QPushButton:hover {{
-        background-color: {COLORS['primary']};
-        color: {COLORS['surface']};
-    }}
-    QPushButton:pressed {{
-        background-color: #4C566A; /* Darker click */
-        color: {COLORS['surface']};
-    }}
-    QPushButton:disabled {{
-        background-color: {COLORS['background']};
-        border: 1px solid {COLORS['border']};
-        color: #999;
-    }}
+/* === INPUT FIELDS (QLineEdit, QSpinBox, dll) === */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background-color: #1e1e1e; /* Input field lebih gelap */
+    color: #ffffff;            /* Teks input putih */
+    border: 1px solid #505050;
+    border-radius: 4px;
+    padding: 4px;
+    selection-background-color: #0078d4;
+    selection-color: #ffffff;
+}
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+    border: 1px solid #0078d4;
+}
 
-    /* Tombol Khusus: Upload & Connect (Solid Color) */
-    QPushButton#primaryBtn {{
-        background-color: {COLORS['primary']};
-        color: {COLORS['surface']};
-        border: none;
-    }}
-    QPushButton#primaryBtn:hover {{
-        background-color: {COLORS['secondary']};
-    }}
+/* === TABLE WIDGET (Ini yang paling sering bermasalah) === */
+QTableWidget {
+    background-color: #1e1e1e;
+    color: #ffffff;            /* Isi tabel putih */
+    gridline-color: #353535;
+    border: 1px solid #353535;
+    selection-background-color: #0078d4;
+    selection-color: #ffffff;
+}
+QTableWidget::item {
+    padding: 5px;
+}
+QTableWidget::item:selected {
+    background-color: #0078d4;
+}
 
-    /* Tombol Start (Green) */
-    QPushButton#startButton {{
-        background-color: {COLORS['success']};
-        color: {COLORS['text']};
-        border: none;
-    }}
-    QPushButton#startButton:hover {{
-        background-color: #8FBC8B; 
-    }}
+/* Header Tabel */
+QHeaderView::section {
+    background-color: #3d3d3d;
+    color: #ffffff;
+    padding: 4px;
+    border: 1px solid #2b2b2b;
+    font-weight: bold;
+}
+QTableCornerButton::section {
+    background-color: #3d3d3d;
+    border: 1px solid #2b2b2b;
+}
 
-    /* Tombol Stop (Red) */
-    QPushButton#stopButton {{
-        background-color: {COLORS['danger']};
-        color: {COLORS['surface']};
-        border: none;
-    }}
-    QPushButton#stopButton:hover {{
-        background-color: #A6545E;
-    }}
+/* === LABELS === */
+QLabel {
+    color: #ffffff; /* Label normal putih */
+}
 
-    /* === INPUT FIELDS (LineEdit, ComboBox, SpinBox) === */
-    QLineEdit, QComboBox, QSpinBox {{
-        background-color: {COLORS['surface']};
-        border: 1px solid {COLORS['border']};
-        border-radius: 4px;
-        padding: 4px;
-        selection-background-color: {COLORS['primary']};
-    }}
-    QLineEdit:focus, QComboBox:focus {{
-        border: 1px solid {COLORS['primary']};
-    }}
+/* === COMBO BOX DROP DOWN === */
+QComboBox QAbstractItemView {
+    background-color: #2b2b2b;
+    color: #ffffff;
+    selection-background-color: #0078d4;
+    selection-color: #ffffff;
+    border: 1px solid #3d3d3d;
+}
 
-    /* === TABLE WIDGET === */
-    QTableWidget {{
-        background-color: {COLORS['surface']};
-        border: 1px solid {COLORS['border']};
-        gridline-color: {COLORS['border']};
-        selection-background-color: {COLORS['secondary']};
-        selection-color: {COLORS['text']};
-    }}
-    QHeaderView::section {{
-        background-color: {COLORS['background']};
-        padding: 5px;
-        border: none;
-        border-bottom: 2px solid {COLORS['border']};
-        font-weight: bold;
-        color: {COLORS['text']};
-    }}
-
-    /* === TAB WIDGET === */
-    QTabWidget::pane {{ 
-        border: 1px solid {COLORS['border']};
-        background: {COLORS['surface']};
-        border-radius: 5px;
-    }}
-    QTabBar::tab {{
-        background: {COLORS['background']};
-        border: 1px solid {COLORS['border']};
-        padding: 8px 12px;
-        margin-right: 2px;
-        border-top-left-radius: 4px;
-        border-top-right-radius: 4px;
-    }}
-    QTabBar::tab:selected {{
-        background: {COLORS['surface']};
-        border-bottom-color: {COLORS['surface']}; /* Blend with pane */
-        color: {COLORS['primary']};
-        font-weight: bold;
-    }}
-
-    /* === SCROLL BAR (Modern Thin) === */
-    QScrollBar:vertical {{
-        border: none;
-        background: {COLORS['background']};
-        width: 8px;
-        margin: 0px 0px 0px 0px;
-    }}
-    QScrollBar::handle:vertical {{
-        background: #BCC3D1;
-        min-height: 20px;
-        border-radius: 4px;
-    }}
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-        height: 0px;
-    }}
+/* === SCROLL BARS (Opsional: Mempercantik Scrollbar) === */
+QScrollBar:vertical {
+    border: none;
+    background: #1e1e1e;
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: #4d4d4d;
+    min-height: 20px;
+    border-radius: 5px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
 """
