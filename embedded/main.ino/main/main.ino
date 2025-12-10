@@ -1,30 +1,37 @@
-// ARDUINO E-NOSE — FINAL SADAD (LOGIKA SENSOR TEMAN KELAS)
-// Library: "Multichannel Gas Sensor" by Seeed Studio
 
 #include <WiFiS3.h>
 #include <Wire.h>
 #include "Multichannel_Gas_GMXXX.h"
 
-// ==================== WIFI (PUNYA SADAD) ====================
-const char* ssid = "Sadad’s phone"; 
-const char* pass = "uhuyuhuy";
-
-// IP HASIL IPCONFIG (PUNYA SADAD)
-const char* RUST_IP = "172.20.10.10"; 
+// ==================== WIFI ====================
+// ==================== WIFI (DATA ANDA) ====================
+const char* ssid      = "Wakope'kakak 1";         
+const char* pass      = "KOPIHITAM";     
+const char* RUST_IP   = "192.168.18.145";  
 const int   RUST_PORT = 8081;
-
+// ARDUINO E-NOSE — FINAL FIX (PIN UPDATED)
+// Library: "Multichannel Gas Sensor" by Seeed Studio
 WiFiClient client;
 
-// ==================== SENSOR (LOGIKA TEMAN KELAS) ====================
+// ==================== SENSOR ====================
 GAS_GMXXX<TwoWire> gas;
-#define MICS_PIN A1
+#define MICS_PIN A1  // Pin A1: Output Analog Sensor MiCS-5524
 float R0_mics = 100000.0;
 
-// ==================== MOTOR PINS (TETAP) ====================
-const int PWM_A  = 10,  DIR_A1 = 12,  DIR_A2 = 13;
-const int PWM_B  = 11,  DIR_B1 = 8,  DIR_B2 = 9;
+// ==================== MOTOR PINS (UPDATED) ====================
+// Motor A = Kipas (Fan)
+// Pin 6: Enable, Pin 9 & 10: Input
+const int PWM_A  = 6;   
+const int DIR_A1 = 9;   
+const int DIR_A2 = 10;  
 
-// ==================== FSM (TETAP) ====================
+// Motor B = Pompa (Pump)
+// Pin 5: Enable, Pin 7 & 8: Input
+const int PWM_B  = 5;   
+const int DIR_B1 = 7;   
+const int DIR_B2 = 8;   
+
+// ==================== FSM ====================
 enum State { IDLE, PRE_COND, RAMP_UP, HOLD, PURGE, RECOVERY, DONE };
 State currentState = IDLE;
 unsigned long stateTime = 0;
@@ -32,7 +39,7 @@ int currentLevel = 0;  // 0 sampai 4
 const int speeds[5] = {51, 102, 153, 204, 255};
 bool samplingActive = false;
 
-// ==================== TIMING (TETAP) ====================
+// ==================== TIMING (ms) ====================
 const unsigned long T_PRECOND  = 10000;
 const unsigned long T_RAMP     = 2000;
 const unsigned long T_HOLD     = 120000;
@@ -41,20 +48,25 @@ const unsigned long T_RECOVERY = 10000;
 unsigned long lastSend = 0;
 
 // ==================== MOTOR HELPER ====================
+// Fungsi menggerakkan Motor A (Kipas)
 void motorA(int speed, bool reverse = false) {
   digitalWrite(DIR_A1, reverse ? LOW : HIGH);
   digitalWrite(DIR_A2, reverse ? HIGH : LOW);
   analogWrite(PWM_A, speed);
 }
+
+// Fungsi menggerakkan Motor B (Pompa)
 void motorB(int speed, bool reverse = false) {
   digitalWrite(DIR_B1, reverse ? LOW : HIGH);
   digitalWrite(DIR_B2, reverse ? HIGH : LOW);
   analogWrite(PWM_B, speed);
 }
+
 void stopMotors() { 
   analogWrite(PWM_A, 0); 
   analogWrite(PWM_B, 0);
 }
+
 void rampTo(int target) {
   static int cur = 0;
   if (cur < target) cur += 10;
@@ -66,15 +78,13 @@ void rampTo(int target) {
 void setup() {
   Serial.begin(9600);
   
-  // Setup Pins
+  // Setup Pins Output
   pinMode(DIR_A1, OUTPUT); pinMode(DIR_A2, OUTPUT); pinMode(PWM_A, OUTPUT);
   pinMode(DIR_B1, OUTPUT); pinMode(DIR_B2, OUTPUT); pinMode(PWM_B, OUTPUT);
   stopMotors();
 
   Wire.begin();
-  
-  // LOGIKA SENSOR: Kembali ke 0x08 sesuai script teman sekelas
-  gas.begin(Wire, 0x08);
+  gas.begin(Wire, 0x08); // SDA/SCL Sensor GM-XXX
 
   // LOOP BLOCKING SAMPAI WIFI KONEK
   Serial.println("STATUS: Connecting WiFi...");
@@ -98,10 +108,11 @@ void setup() {
 
 // ==================== LOOP ====================
 void loop() {
-  // 1. Prioritas Baca Serial (Command dari Rust)
+  // 1. Cek Perintah Serial
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim(); 
+    
     Serial.print("DEBUG: Recv -> "); 
     Serial.println(cmd);
 
@@ -109,13 +120,13 @@ void loop() {
     else if (cmd == "STOP_SAMPLING") stopSampling();
   }
 
-  // 2. Kirim Data (Interval 250ms)
+  // 2. Kirim Data ke Server (Timer Non-blocking)
   if (millis() - lastSend >= 250) { 
     lastSend = millis(); 
     sendSensorData(); 
   }
   
-  // 3. Jalankan FSM
+  // 3. Jalankan FSM (Logika Sampling)
   if (samplingActive) runFSM();
 }
 
@@ -180,22 +191,18 @@ void runFSM() {
   }
 }
 
-// ==================== KIRIM DATA (LOGIKA SENSOR TEMAN) ====================
+// ==================== KIRIM DATA ====================
 void sendSensorData() {
   uint32_t rno2 = gas.measure_NO2();
   uint32_t reth = gas.measure_C2H5OH();
   uint32_t rvoc = gas.measure_VOC();
   uint32_t rco  = gas.measure_CO();
 
-  // LOGIKA PEMROSESAN SINYAL (Sama persis dengan script teman)
-  // Jika nilai mentah >= 30.000, set ke -1.0 (Clean air/Error)
-  // Jika valid, bagi 1000.0 untuk normalisasi
   float no2 = (rno2 < 30000) ? rno2/1000.0 : -1.0;
   float eth = (reth < 30000) ? reth/1000.0 : -1.0;
   float voc = (rvoc < 30000) ? rvoc/1000.0 : -1.0;
   float co  = (rco  < 30000) ? rco /1000.0 : -1.0;
   
-  // Baca Sensor MiCS (Analog)
   float raw = analogRead(MICS_PIN) * (5.0/1023.0);
   float Rs = (raw > 0.1) ? 820.0*(5.0-raw)/raw : 100000;
   float ratio = Rs / R0_mics;
@@ -203,13 +210,12 @@ void sendSensorData() {
   float eth_mics = pow(10.0, (log10(ratio)-0.15)/-0.65);
   float voc_mics = pow(10.0, (log10(ratio)+0.10)/-0.75);
 
-  // Susun Paket Data
   String data = "SENSOR:";
   data += String(no2,3) + "," + String(eth,3) + "," + String(voc,3) + "," + String(co,3) + ",";
   data += String(co_mics,3) + "," + String(eth_mics,3) + "," + String(voc_mics,3) + ",";
   data += String(currentState) + "," + String(currentLevel);
 
-  // Kirim via WiFi TCP
+  // Kirim TCP ke Rust
   if (client.connect(RUST_IP, RUST_PORT)) {
     client.print(data + "\n");
     client.stop();
