@@ -6,7 +6,7 @@ set output ARG2  # Parameter 2: Nama file output (.png)
 set title "Hasil Analisis GNUPLOT: Respon Sensor" font "Segoe UI,14"
 set datafile separator ","
 set xlabel "Waktu (Detik)"
-set ylabel "Nilai Sensor (V)"
+set ylabel "Nilai Sensor (PPM)"
 set grid xtics ytics mytics
 set key outside right center box title "Legenda"
 

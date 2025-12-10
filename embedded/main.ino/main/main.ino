@@ -48,12 +48,11 @@ bool printFanLead = false;
 bool printBoth = false;
 
 // ==================== TIMING (SYNCHRONIZED!) ====================
-const unsigned long T_FAN_LEAD = 5000;  // Kipas menyala duluan selama 5 detik
-const unsigned long T_PRECOND  = 5000;   // 5 seconds
-const unsigned long T_RAMP     = 3000;   // 3 seconds
-const unsigned long T_HOLD     = 20000;  // 20 seconds 
-const unsigned long T_PURGE    = 40000;  // 40 seconds 
-const unsigned long T_RECOVERY = 5000;   // 5 seconds
+const unsigned long T_PRECOND  = 10000;
+const unsigned long T_RAMP     = 2000;
+const unsigned long T_HOLD     = 120000;
+const unsigned long T_PURGE    = 240000;
+const unsigned long T_RECOVERY = 10000;
 unsigned long lastSend = 0;
 unsigned long lastReconnect = 0;
 

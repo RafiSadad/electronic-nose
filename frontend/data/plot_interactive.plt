@@ -6,7 +6,7 @@
 set title "Memonitor Data Sensor (Mode Interaktif)" font "Segoe UI,14"
 set datafile separator ","
 set xlabel "Waktu (Detik)"
-set ylabel "Nilai Sensor (V)"
+set ylabel "Nilai Sensor (PPM)"
 
 # Grid dan Legenda
 set grid xtics ytics mytics

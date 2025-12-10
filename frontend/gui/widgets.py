@@ -64,7 +64,7 @@ class SensorPlot(pg.PlotWidget):
         
         # Style Axis
         styles = {'color': '#5D4037', 'font-size': '10pt'}
-        self.setLabel('left', 'Value (V)', **styles)
+        self.setLabel('left', 'Value ()', **styles)
         self.setLabel('bottom', 'Time (s)', **styles)
         
         self.num_sensors = NUM_SENSORS
